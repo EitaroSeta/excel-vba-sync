@@ -3,17 +3,17 @@
     "displayName": "VBA Module Sync",
     "description": "Export VBA modules to VSCode & import them back to Excel.",
     "version": "0.0.1",
-    "publisher": "Eitaro SETA",
+    "publisher": "eitaro-seta",
     "license": "MIT",   
     "author": {
-      "name": "Eitaro SETA",
+      "name": "Eitaro Seta",
       "email": "seta.eitaro@gmail.com",
-      "url": "https://github.com/ESet00"
+      "url": "https://github.com/EitaroSeta"
     },
 
     "repository": {
       "type": "git",
-      "url": "https://github.com/ESet00/vba-module-sync.git"
+      "url": "https://github.com/EitaroSeta/excel-vba-sync.git"
     },
     "categories": [
       "Other"

@@ -54,3 +54,39 @@ Currently, the following two languages are supported, so please create a *.json 
   ├─ ja.json
   └─ en.json
 
+---
+
+## 🛠 開発 (Development)
+
+### 前提 / Requirements
+- Windows + Microsoft Excel（VBA を実行するため）
+- Node.js LTS（18 以上推奨）と npm
+- Visual Studio Code（拡張の起動・デバッグに使用）
+
+### セットアップ / Setup
+npm install
+```
+
+### ビルド & 実行 / Build & Run
+- TypeScript を監視ビルド:
+npm run compile
+```
+- VS Code で `F5` を押して **Extension Development Host** を起動
+
+### 主要コマンド / Key Commands
+- **Export All Modules From VBA** — Excel から VBA モジュールを一括エクスポート
+- **Import Module To VBA** — 編集したモジュールを Excel に取り込み
+- **Set Export Folder** — エクスポート先フォルダの指定
+> いずれもコマンドパレット（`Ctrl+Shift+P`）から実行できます。
+
+### パッケージ化（任意） / Package (optional)
+`vsce` で配布用 `.vsix` を作成できます（CLI）。
+npm i -g @vscode/vsce
+vsce package
+```
+`.vscodeignore` により TypeScript やテスト等はパッケージから除外されます。
+
+### リポジトリ構成（抜粋） / Repo Layout
+- `src/` — 拡張のソースコード（TypeScript）
+- `scripts/` — Excel 連携用 PowerShell スクリプト
+- `locales/` — 多言語リソース（`ja.json`, `en.json`）
