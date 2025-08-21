@@ -68,7 +68,6 @@ npm install
 ```
 
 ### ビルド & 実行 / Build & Run
-- TypeScript を監視ビルド:
 npm run compile
 ```
 - VS Code で `F5` を押して **Extension Development Host** を起動
@@ -90,3 +89,12 @@ vsce package
 - `src/` — 拡張のソースコード（TypeScript）
 - `scripts/` — Excel 連携用 PowerShell スクリプト
 - `locales/` — 多言語リソース（`ja.json`, `en.json`）
+
+## 🧩 インストール（VSIX） / Install from VSIX
+
+### 方法A: VS Code の UI から
+1. VS Code を開く
+2. 拡張機能ビュー（Ctrl+Shift+X / Cmd+Shift+X）を開く
+3. 右上の「…」メニュー → **Install from VSIX...** を選択
+4. 作成した `.vsix` ファイル（例: `your-extension-0.1.0.vsix`）を選択
+5. 再読み込み（Reload）が求められたら実行
