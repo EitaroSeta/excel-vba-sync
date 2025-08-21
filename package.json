@@ -1,0 +1,130 @@
+  {
+    "name": "vba-module-sync",
+    "displayName": "VBA Module Sync",
+    "description": "Export VBA modules to VSCode & import them back to Excel.",
+    "version": "0.0.1",
+    "publisher": "Eitaro SETA",
+    "license": "MIT",   
+    "author": {
+      "name": "Eitaro SETA",
+      "email": "seta.eitaro@gmail.com",
+      "url": "https://github.com/ESet00"
+    },
+
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/ESet00/vba-module-sync.git"
+    },
+    "categories": [
+      "Other"
+    ],
+    "icon": "media/icon.png",
+    "engines": {
+      "vscode": "^1.102.0"
+    },
+    "main": "./out/extension.js",
+    "contributes": {
+      "viewsContainers": {
+        "activitybar": [
+          {
+            "id": "excelVbaSync",
+            "title": "Excel VBA VSCode Sync",
+            "icon": "media/icon.png"
+          }
+        ]
+      },
+      "configuration": {
+        "type": "object",
+        "title": "Excel VBA Sync Configuration",
+        "properties": {
+          "excelVbaSync.exportFolder": {
+            "type": "string",
+            "default": "exported",
+            "description": "VBAモジュールのエクスポート先フォルダ"
+          }
+        }
+      },
+      "views": {
+        "excelVbaSync": [
+          {
+            "id": "exportPanel",
+            "name": "v1.0",
+            "icon": "media/icon.png"
+          }
+        ],
+        "explorer": [
+          {
+            "id": "excelVbaSyncView",
+            "name": "VBA Sync",
+            "icon": "media/icon.png"
+          }
+        ]
+      },
+      "commands": [
+        {
+          "command": "excel-vba-sync.exportVBA",
+          "title": "Export All Modules From VBA",
+          "icon":"$(cloud-download)"
+        },
+        {
+          "command": "excel-vba-sync.importVBA",
+          "title": "Import Module To VBA",
+          "icon":"$(cloud-upload)"
+        },
+        {
+          "command": "excel-vba-sync.setExportFolder",
+          "title": "Set Export Folder",
+          "icon": "$(folder)"
+        }
+      ],
+      "menus": {
+        "view/title": [
+          {
+            "command": "excel-vba-sync.exportVBA",
+            "when": "view == exportPanel",
+            "group": "navigation"
+          },
+          {
+            "command": "excel-vba-sync.importVBA",
+            "when": "view == exportPanel",
+            "group": "navigation"
+          },
+          {
+            "command": "excel-vba-sync.setExportFolder",
+            "when": "view == exportPanel",
+            "group": "navigation"
+          }
+        ]
+      },
+      "languages": [
+        {
+            "id": "vb",
+            "aliases": ["Visual Basic", "vb"],
+            "extensions": [".frm"]
+        }
+      ]
+    },
+
+    "scripts": {
+      "vscode:prepublish": "npm run compile",
+      "compile": "tsc -p ./",
+      "watch": "tsc -watch -p ./",
+      "pretest": "npm run compile && npm run lint",
+      "lint": "eslint src",
+      "test": "vscode-test"
+    },
+    "devDependencies": {
+      "@types/mocha": "^10.0.10",
+      "@types/node": "20.x",
+      "@types/vscode": "^1.102.0",
+      "@typescript-eslint/eslint-plugin": "^8.31.1",
+      "@typescript-eslint/parser": "^8.31.1",
+      "@vscode/test-cli": "^0.0.11",
+      "@vscode/test-electron": "^2.5.2",
+      "eslint": "^9.25.1",
+      "typescript": "^5.8.3"
+    },
+    "dependencies": {
+      "iconv-lite": "^0.6.3"
+    }
+  }
