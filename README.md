@@ -3,7 +3,7 @@
 ### Quickstart (.vsix)
 Windows:
 ```powershell
-iwr -useb https://github.com/EitaroSeta/excel-vba-sync/release/latest/download/vba-module-sync-latest.vsix -OutFile $env:TEMP\vba-module-sync-latest.vsix; code --install-extension $env:TEMP\vba-module-sync-latest.vsix
+iwr -useb https://raw.githubusercontent.com/EitaroSeta/excel-vba-sync/main/release/latest/download/excel-vba-sync-latest.vsix -OutFile $env:TEMP\excel-vba-sync-latest.vsix ; code --install-extension $env:TEMP\excel-vba-sync-latest.vsix 
 ```
 
 > アップデート: 上と同じコマンドで再実行（`--force` 推奨）。UI手順は下の「インストール（VSIX）」参照
