@@ -1,4 +1,4 @@
-> VS CodeでVBAを編集・レビューしやすくする双方向同期拡張（Excelとモジュールを行き来）
+﻿> VS CodeでVBAを編集・レビューしやすくする双方向同期拡張（Excelとモジュールを行き来）
 
 ### Quickstart (.vsix)
 Windows:
@@ -54,14 +54,14 @@ It enables **bidirectional sync** between Excel and VSCode.
 
 ## ⚙️ ローカライズ設定例 / Localization Example
 
-拡張機能の表示テキストは locales フォルダの言語別 JSON ファイルで管理しています。
+拡張機能の表示テキストは locales フォルダの言語別 JSON ファイルで管理しています。  
 現在は以下の2言語に対応していますので、*.jsonを使用したい言語に合わせて作ってください。
 
-The extension’s display text is managed in language-specific JSON files located in the locales folder.
+The extension’s display text is managed in language-specific JSON files located in the locales folder.  
 Currently, the following two languages are supported, so please create a *.json file for the language you want to use.
 
  locales/
-  ├─ ja.json
+  ├─ ja.json  
   └─ en.json
 
 ---
@@ -70,8 +70,8 @@ Currently, the following two languages are supported, so please create a *.json 
 
 ### 前提 / Requirements
 - Windows + Microsoft Excel（VBA を実行するため）
-- Node.js LTS（18 以上推奨）と npm
-- Visual Studio Code（拡張の起動・デバッグに使用）
+- Node.js LTS（18 以上推奨）と npm  
+- Visual Studio Code（拡張の起動・デバッグに使用）  
 
 ### セットアップ / Setup
 npm install
@@ -90,7 +90,7 @@ npm run compile
 
 ### パッケージ化（任意） / Package (optional)
 `vsce` で配布用 `.vsix` を作成できます（CLI）。
-npm i -g @vscode/vsce
+npm i -g @vscode/vsce  
 vsce package
 ```
 `.vscodeignore` により TypeScript やテスト等はパッケージから除外されます。
