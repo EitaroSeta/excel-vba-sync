@@ -1,4 +1,4 @@
-﻿> VS CodeでVBAを編集・レビューしやすくする双方向同期拡張（Excelとモジュールを行き来）
+﻿> VS CodeでVBAを編集・レビューしやすくする双方向同期拡張（ExcelVBAとVSCodeを連携）
 
 ### Quickstart (.vsix)
 Windows:
