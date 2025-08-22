@@ -1,3 +1,13 @@
+> VS CodeでVBAを編集・レビューしやすくする双方向同期拡張（Excelとモジュールを行き来）
+
+### Quickstart (.vsix)
+Windows:
+```powershell
+iwr -useb https://github.com/EitaroSeta/excel-vba-sync/releases/latest/download/vba-module-sync-latest.vsix -OutFile $env:TEMP\vba-module-sync-latest.vsix; code --install-extension $env:TEMP\vba-module-sync-latest.vsix
+```
+
+> アップデート: 上と同じコマンドで再実行（`--force` 推奨）。UI手順は下の「インストール（VSIX）」参照
+
 ﻿# 📤 VBA Module Sync - VSCode ⇄ Excel
 
 ## 概要（Japanese）
