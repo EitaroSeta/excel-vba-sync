@@ -60,7 +60,7 @@ It enables **bidirectional sync** between Excel and VSCode.
 The extension’s display text is managed in language-specific JSON files located in the locales folder.  
 Currently, the following two languages are supported, so please create a *.json file for the language you want to use.
 
- locales/
+ locales/  
   ├─ ja.json  
   └─ en.json
 
@@ -89,7 +89,7 @@ npm run compile
 > いずれもコマンドパレット（`Ctrl+Shift+P`）から実行できます。
 
 ### パッケージ化（任意） / Package (optional)
-`vsce` で配布用 `.vsix` を作成できます（CLI）。
+`vsce` で配布用 `.vsix` を作成できます（CLI）。  
 npm i -g @vscode/vsce  
 vsce package
 ```
