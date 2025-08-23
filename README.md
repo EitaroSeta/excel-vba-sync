@@ -70,6 +70,7 @@ Currently, the following two languages are supported, so please create a *.json 
 
 ### 前提 / Requirements
 - Windows + Microsoft Excel（VBA を実行するため）
+- Windows PowerShell 5.1（PowerShell 7 は未検証）
 - Node.js LTS（18 以上推奨）と npm  
 - Visual Studio Code（拡張の起動・デバッグに使用）  
 
