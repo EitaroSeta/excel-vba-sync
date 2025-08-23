@@ -57,8 +57,8 @@ It enables **bidirectional sync** between Excel and VSCode.
 
 ---
 
-# エクスポートした `.frm` の属性は編集しないでください
-# Do **not** edit attributes of exported `.frm` files
+## エクスポートした `.frm` の属性は編集しないでください
+## Do **not** edit attributes of exported `.frm` files
 
 **重要 / Important**
 > エクスポートした **`.frm`（UserForm）** の **属性行は編集しないでください**。`VERSION`、`Begin … End`、`Object = …`、および `Attribute VB_*`（例：`VB_Name` / `VB_PredeclaredId` / `VB_Exposed` / `VB_Creatable` など）を変更すると、**再インポート失敗**・**既存フォームとの紐付け崩れ**が発生します。  
