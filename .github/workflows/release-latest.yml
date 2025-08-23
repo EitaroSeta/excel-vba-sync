@@ -2,11 +2,11 @@ name: Build & publish latest VSIX
 
 on:
   push:
-    branches: [ main ]        # main へ push されたら実行
-  workflow_dispatch:          # 手動実行も可
+    branches: [ main ]
+  workflow_dispatch:
 
 permissions:
-  contents: write             # Release 作成に必要
+  contents: write   # タグ更新・リリース作成に必要
 
 jobs:
   build:
@@ -31,16 +31,41 @@ jobs:
 
       - name: Package VSIX
         run: npx @vscode/vsce package
-        # 出力: <package.jsonのname>-<version>.vsix
 
       - name: Make stable filename
         shell: bash
         run: |
           VSIX_ORIG=$(ls *.vsix)
           echo "Original: $VSIX_ORIG"
-          cp "$VSIX_ORIG" extension.vsix            # 毎回同じ名前に
+          cp "$VSIX_ORIG" extension.vsix
           sha256sum extension.vsix > SHA256SUMS
 
+      # ★ ここで latest タグを現在のコミットに“強制的に”付け替える
+      - name: Update `latest` tag to current commit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = 'latest';
+            const {owner, repo} = context.repo;
+            const sha = context.sha;
+            try {
+              // 既存タグがあれば更新（--force 相当）
+              await github.rest.git.updateRef({
+                owner, repo,
+                ref: `tags/${tag}`,
+                sha,
+                force: true
+              });
+            } catch (e) {
+              // まだ無ければ作成
+              await github.rest.git.createRef({
+                owner, repo,
+                ref: `refs/tags/${tag}`,
+                sha
+              });
+            }
+
+      # リリースはアセットを毎回置き換え
       - name: Create/Update 'latest' Release (overwrite assets)
         uses: ncipollo/release-action@v1
         with:
@@ -48,7 +73,6 @@ jobs:
           name: Latest Build
           prerelease: true
           allowUpdates: true
-          replacesArtifacts: true     # 既存アセットを置き換え
-          commit: ${{ github.sha }}
-          artifacts: "extension.vsix,SHA256SUMS"  
+          replacesArtifacts: true
+          artifacts: "extension.vsix,SHA256SUMS"
           token: ${{ secrets.GITHUB_TOKEN }}
