@@ -70,15 +70,17 @@ Currently, the following two languages are supported, so please create a *.json 
 
 ### 前提 / Requirements
 - Windows + Microsoft Excel（VBA を実行するため）
-- Windows PowerShell 5.1（PowerShell 7 は未検証）
+- Windows PowerShell 5.1/v2025.2.0（PowerShell 7 は未検証）
 - Node.js LTS（18 以上推奨）と npm  
 - Visual Studio Code（拡張の起動・デバッグに使用）  
 
 ### セットアップ / Setup
+```powershell
 npm install
 ```
 
 ### ビルド & 実行 / Build & Run
+```powershell
 npm run compile
 ```
 - VS Code で `F5` を押して **Extension Development Host** を起動
@@ -91,6 +93,7 @@ npm run compile
 
 ### パッケージ化（任意） / Package (optional)
 `vsce` で配布用 `.vsix` を作成できます（CLI）。  
+```powershell
 npm i -g @vscode/vsce  
 vsce package
 ```
@@ -103,9 +106,9 @@ vsce package
 
 ## 🧩 インストール（VSIX） / Install from VSIX
 
-### 方法A: VS Code の UI から
+### VS Code の UI から以下を実施
 1. VS Code を開く
 2. 拡張機能ビュー（Ctrl+Shift+X / Cmd+Shift+X）を開く
-3. 右上の「…」メニュー → **Install from VSIX...** を選択
+3. 右上の「…」メニュー → **VSIXからのインストール...** を選択
 4. 作成した `.vsix` ファイル（例: `your-extension-0.1.0.vsix`）を選択
 5. 再読み込み（Reload）が求められたら実行
