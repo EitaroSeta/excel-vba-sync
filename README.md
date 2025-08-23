@@ -1,12 +1,19 @@
-﻿> VS CodeでVBAを編集・レビューしやすくする双方向同期拡張（ExcelVBAとVSCodeを連携）
-
-### Quickstart (.vsix)
-Windows:
-```powershell
-code --install-extension 9kv8xiyi.excel-vba-sync
-```
-
 ﻿# 📤 VBA Module Sync - VSCode ⇄ Excel
+
+## 🚀 インストール方法 / Installation
+
+Windows:
+### From Marketplace (recommended)
+- [Visual Studio Marketplace - excel-vba-sync](https://marketplace.visualstudio.com/items?itemName=9kv8xiyi.excel-vba-sync)  
+- Visual Studio Code を開き、拡張機能ビューからインストールしてください。
+
+### From GitHub Release (VSIX)
+```powershell
+$URL = "https://github.com/EitaroSeta/excel-vba-sync/releases/latest/download/extension.vsix"
+$OUT = "$env:TEMP\extension.vsix"
+curl.exe -L --fail $URL -o $OUT
+code --install-extension $OUT
+```
 
 ## 概要（Japanese）
 
@@ -50,6 +57,14 @@ It enables **bidirectional sync** between Excel and VSCode.
 
 ---
 
+# エクスポートした `.frm` の属性は編集しないでください
+# Do **not** edit attributes of exported `.frm` files
+
+**重要 / Important**
+> エクスポートした **`.frm`（UserForm）** の **属性行は編集しないでください**。`VERSION`、`Begin … End`、`Object = …`、および `Attribute VB_*`（例：`VB_Name` / `VB_PredeclaredId` / `VB_Exposed` / `VB_Creatable` など）を変更すると、**再インポート失敗**・**既存フォームとの紐付け崩れ**が発生します。  
+
+> Do **not edit the attribute lines** in exported **`.frm` (UserForm)** files. Changing `VERSION`, `Begin … End`, `Object = …`, or any `Attribute VB_*` (e.g., `VB_Name`, `VB_PredeclaredId`, `VB_Exposed`, `VB_Creatable`) can cause **re-import failures**,  and **loss of linkage** to the original form.
+
 ## ⚙️ ローカライズ設定例 / Localization Example
 
 拡張機能の表示テキストは locales フォルダの言語別 JSON ファイルで管理しています。  
@@ -64,10 +79,11 @@ Currently, the following two languages are supported, so please create a *.json 
 
 ---
 
-## 🛠 開発 (Development)
+## 🛠 開発者・コントリビューター向け情報 / Development (for GitHub users)
+このセクションは拡張機能の利用者には不要です。拡張の開発や修正に参加したい方向けの情報です。  
 
 ### 前提 / Requirements
-- Windows + Microsoft Excel（VBA を実行するため）
+- Windows10/11 + Microsoft Excel（VBA を実行するため）
 - Windows PowerShell 5.1/v2025.2.0（PowerShell 7 は未検証）
 - Node.js LTS（18 以上推奨）と npm  
 - Visual Studio Code（拡張の起動・デバッグに使用）  
@@ -86,10 +102,9 @@ npm run compile
 ### 主要コマンド / Key Commands
 - **Export All Modules From VBA** — Excel から VBA モジュールを一括エクスポート
 - **Import Module To VBA** — 編集したモジュールを Excel に取り込み
-- **Set Export Folder** — エクスポート先フォルダの指定
-> いずれもコマンドパレット（`Ctrl+Shift+P`）から実行できます。
+- **Set Export Folder** — エクスポート先フォルダの指定  
 
-### パッケージ化（任意） / Package (optional)
+### パッケージ化 / Package
 `vsce` で配布用 `.vsix` を作成できます（CLI）。  
 ```powershell
 npm i -g @vscode/vsce  
@@ -99,7 +114,7 @@ vsce package
 
 ### リポジトリ構成（抜粋） / Repo Layout
 - `src/` — 拡張のソースコード（TypeScript）
-- `scripts/` — Excel 連携用 PowerShell スクリプト
+- `scripts/` — Excel 連携用 PowerShell Script
 - `locales/` — 多言語リソース（`ja.json`, `en.json`）
 
 ## 🧩 インストール（VSIX） / Install from VSIX
@@ -108,5 +123,5 @@ vsce package
 1. VS Code を開く
 2. 拡張機能ビュー（Ctrl+Shift+X / Cmd+Shift+X）を開く
 3. 右上の「…」メニュー → **VSIXからのインストール...** を選択
-4. 作成した `.vsix` ファイル（例: `excel-vba-sync-*.*.*.vsix`）を選択
-5. 再読み込み（Reload）が求められたら実行
+4. 作成した `.vsix` ファイル（例: `extension.vsix`）を選択
+5. Reloadを実行
