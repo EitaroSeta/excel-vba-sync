@@ -1,18 +1,18 @@
-name: Build & publish latest VSIX
+name: Build & Release VSIX
 
 on:
   push:
-    branches: [ main ]        # main へ push されたら実行
-  workflow_dispatch:          # 手動実行も可
-
-permissions:
-  contents: write             # Release 作成に必要
+    branches:
+      - main        # main ブランチに push した時
+  workflow_dispatch:  # 手動実行も可
 
 jobs:
-  build:
+  build-package:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -20,10 +20,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install deps
+      - name: Install dependencies
         run: npm ci
 
-      - name: Build (if any)
+      - name: Build (if you have)
         run: |
           if npm run | grep -q "compile"; then
             npm run compile
@@ -31,23 +31,9 @@ jobs:
 
       - name: Package VSIX
         run: npx @vscode/vsce package
-        # 出力: <package.jsonのname>-<version>.vsix
 
-      - name: Make stable filename
-        shell: bash
-        run: |
-          VSIX_ORIG=$(ls *.vsix)
-          echo "Original: $VSIX_ORIG"
-          cp "$VSIX_ORIG" extension.vsix            # 毎回同じ名前に
-          sha256sum extension.vsix > SHA256SUMS
-
-      - name: Create/Update 'latest' Release (overwrite assets)
-        uses: ncipollo/release-action@v1
+      - name: Upload VSIX as artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag: latest
-          name: Latest Build
-          prerelease: true
-          allowUpdates: true
-          replacesArtifacts: true     # 既存アセットを置き換え
-          artifacts: "extension.vsix,SHA256SUMS"
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: vsix
+          path: "*.vsix"
