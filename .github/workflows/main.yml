@@ -1,18 +1,18 @@
-name: Build & Release VSIX
+name: Build & publish latest VSIX
 
 on:
   push:
-    tags:
-      - 'v*.*.*'     # v1.2.3 などのタグを push した時に実行
-  workflow_dispatch:  # 手動実行も可
+    branches: [ main ]        # main へ push されたら実行
+  workflow_dispatch:          # 手動実行も可
+
+permissions:
+  contents: write             # Release 作成に必要
 
 jobs:
-  build-package:
+  build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -20,10 +20,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install deps
         run: npm ci
 
-      - name: Typecheck / Build (if you have)
+      - name: Build (if any)
         run: |
           if npm run | grep -q "compile"; then
             npm run compile
@@ -31,17 +31,23 @@ jobs:
 
       - name: Package VSIX
         run: npx @vscode/vsce package
-        # 出力: <name>-<version>.vsix （package.json に依存）
+        # 出力: <package.jsonのname>-<version>.vsix
 
-      - name: Upload VSIX as artifact (for debugging)
-        uses: actions/upload-artifact@v4
-        with:
-          name: vsix
-          path: "*.vsix"
+      - name: Make stable filename
+        shell: bash
+        run: |
+          VSIX_ORIG=$(ls *.vsix)
+          echo "Original: $VSIX_ORIG"
+          cp "$VSIX_ORIG" extension.vsix            # 毎回同じ名前に
+          sha256sum extension.vsix > SHA256SUMS
 
-      - name: Create GitHub Release and upload VSIX
-        uses: softprops/action-gh-release@v2
+      - name: Create/Update 'latest' Release (overwrite assets)
+        uses: ncipollo/release-action@v1
         with:
-          files: "*.vsix"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: latest
+          name: Latest Build
+          prerelease: true
+          allowUpdates: true
+          replacesArtifacts: true     # 既存アセットを置き換え
+          artifacts: "extension.vsix,SHA256SUMS"
+          token: ${{ secrets.GITHUB_TOKEN }}
