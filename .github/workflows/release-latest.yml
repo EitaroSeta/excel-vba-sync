@@ -49,5 +49,6 @@ jobs:
           prerelease: true
           allowUpdates: true
           replacesArtifacts: true     # 既存アセットを置き換え
-          artifacts: "extension.vsix,SHA256SUMS"
+          commit: ${{ github.sha }}
+          artifacts: "extension.vsix,SHA256SUMS"  
           token: ${{ secrets.GITHUB_TOKEN }}
