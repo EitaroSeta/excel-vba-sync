@@ -110,5 +110,5 @@ vsce package
 1. VS Code を開く
 2. 拡張機能ビュー（Ctrl+Shift+X / Cmd+Shift+X）を開く
 3. 右上の「…」メニュー → **VSIXからのインストール...** を選択
-4. 作成した `.vsix` ファイル（例: `your-extension-0.1.0.vsix`）を選択
+4. 作成した `.vsix` ファイル（例: `excel-vba-sync-*.*.*.vsix`）を選択
 5. 再読み込み（Reload）が求められたら実行
