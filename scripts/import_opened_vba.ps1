@@ -156,11 +156,30 @@ function Import-FormToVBProject {
     param(
         $filename,
         $vbproject,
-        [string]$frmPath
+        [string]$frmPath,
+        $existingModuleNames
     )
 
     $base = [System.IO.Path]::GetFileNameWithoutExtension($frmPath)
     $frx  = [System.IO.Path]::ChangeExtension($frmPath, ".frx")
+
+    # モジュールの親ディレクトリ名から対象ブック名を取得
+    $parentDirName = Split-Path (Split-Path $frmPath -Parent) -Leaf
+    $bookName = [System.IO.Path]::GetFileNameWithoutExtension($vbproject.FileName)
+
+    # インポートするファイルの親フォルダ名がブック名と異なるならスキップ（同名モジュール対策）
+    if ($parentDirName -ne $bookName) {
+        Write-Host ($messages."import.warn.skipDifferentFolder" -f $base, $parentDirName, $bookName)
+        return $false
+    }
+    
+    # Excelブックに存在しないモジュールはスキップ
+    if (-not ($existingModuleNames -contains $base)) {
+        Write-Host ($messages."import.warn.moduleNotFound" -f $base, $vbproject.FileName)
+        return $false
+    } else {
+        Write-Host ($messages."import.info.importModule" -f $base, $vbproject.FileName)
+    }
 
     # FormはSJISで扱う
     $tmpFrm = Convert-Frm-Utf8-ToSjisTemp -frmPath $frmPath
@@ -311,8 +330,10 @@ foreach ($wb in $workbooks) {
 
         #.frx/.frm
         if ($ext -eq ".frm") {
-          $ok = Import-FormToVBProject -filename $wb.Name -vbproject $vbproject -frmPath $file.FullName
-          if ($ok) { $anySuccess = $true }
+          $ok = Import-FormToVBProject -filename $wb.Name -vbproject $vbproject -frmPath $file.FullName -existingModuleNames $existingModuleNames
+          if ($ok) {
+            $anySuccess = $true 
+          }
           continue
         }
 
