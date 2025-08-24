@@ -1,20 +1,5 @@
 ﻿# 📤 VBA Module Sync - VSCode ⇄ Excel
 
-## 🚀 インストール方法 / Installation
-
-Windows:
-### From Marketplace (recommended)
-- [Visual Studio Marketplace - excel-vba-sync](https://marketplace.visualstudio.com/items?itemName=9kv8xiyi.excel-vba-sync)  
-- Visual Studio Code を開き、拡張機能ビューからインストールしてください。
-
-### From GitHub Release (VSIX)
-```powershell
-$URL = "https://github.com/EitaroSeta/excel-vba-sync/releases/latest/download/extension.vsix"
-$OUT = "$env:TEMP\extension.vsix"
-curl.exe -L --fail $URL -o $OUT
-code --install-extension $OUT
-```
-
 ## 概要（Japanese）
 
 **VBA Module Sync** は、Excel の VBA モジュールを VSCode 上で編集するための拡張機能です。  
@@ -56,31 +41,23 @@ It enables **bidirectional sync** between Excel and VSCode.
 | Command Palette / GUI support  | Use commands or side panel buttons                               |
 
 ---
+## ⚠重要 / Important ##
 
-## エクスポートした `.frm` の属性は編集しないでください
-## Do **not** edit attributes of exported `.frm` files
-
-**重要 / Important**
+**エクスポートした `.frm` の属性は編集しないでください**
 > エクスポートした **`.frm`（UserForm）** の **属性行は編集しないでください**。`VERSION`、`Begin … End`、`Object = …`、および `Attribute VB_*`（例：`VB_Name` / `VB_PredeclaredId` / `VB_Exposed` / `VB_Creatable` など）を変更すると、**再インポート失敗**・**既存フォームとの紐付け崩れ**が発生します。  
 
-> Do **not edit the attribute lines** in exported **`.frm` (UserForm)** files. Changing `VERSION`, `Begin … End`, `Object = …`, or any `Attribute VB_*` (e.g., `VB_Name`, `VB_PredeclaredId`, `VB_Exposed`, `VB_Creatable`) can cause **re-import failures**,  and **loss of linkage** to the original form.
+**モジュールの新規追加はできません**
+>既存のモジュール/クラス/フォームを入替えを行う仕組みの為、新規の追加はできません。 新規に作成する場合は空のモジュールを追加・保存したうえでエクスポートしてください。
 
-## ⚙️ ローカライズ設定例 / Localization Example
+**Do **not** edit attributes of exported `.frm` files**
+> Do **not edit the attribute lines** in exported **`.frm` (UserForm)** files. Changing `VERSION`, `Begin … End`, `Object = …`, or any `Attribute VB_*` (e.g., `VB_Name`, `VB_PredeclaredId`, `VB_Exposed`, `VB_Creatable`) can cause **re-import failures**,  and **loss of linkage** to the original form.  
 
-拡張機能の表示テキストは locales フォルダの言語別 JSON ファイルで管理しています。  
-現在は以下の2言語に対応していますので、*.jsonを使用したい言語に合わせて作ってください。
-
-The extension’s display text is managed in language-specific JSON files located in the locales folder.  
-Currently, the following two languages are supported, so please create a *.json file for the language you want to use.
-
- locales/  
-  ├─ ja.json  
-  └─ en.json
-
+**New modules, classes, or forms cannot be added;**
+>New modules, classes, or forms cannot be added; this tool only replaces existing ones.If you need to create a new item, first add and save a blank module/class/form in the VBE, then export it.
 ---
 
-## 🛠 開発者・コントリビューター向け情報 / Development (for GitHub users)
-このセクションは拡張機能の利用者には不要です。拡張の開発や修正に参加したい方向けの情報です。  
+## 🛠 開発者向け情報 / Development (for GitHub users)
+このセクションは拡張機能の利用者には不要です。拡張の開発や修正向けの備忘です。  
 
 ### 前提 / Requirements
 - Windows10/11 + Microsoft Excel（VBA を実行するため）
@@ -115,13 +92,38 @@ vsce package
 ### リポジトリ構成（抜粋） / Repo Layout
 - `src/` — 拡張のソースコード（TypeScript）
 - `scripts/` — Excel 連携用 PowerShell Script
-- `locales/` — 多言語リソース（`ja.json`, `en.json`）
+- `locales/` — 多言語リソース（`ja.json`, `en.json`）  
+
+## ⚙️ ローカライズ設定例 / Localization Example
+
+拡張機能の表示テキストは locales フォルダの言語別 JSON ファイルで管理しています。  
+現在は以下の2言語に対応していますので、*.jsonを使用したい言語に合わせて作ってください。
+
+The extension’s display text is managed in language-specific JSON files located in the locales folder.  
+Currently, the following two languages are supported, so please create a *.json file for the language you want to use.
+
+ locales/  
+  ├─ ja.json  
+  └─ en.json
 
 ## 🧩 インストール（VSIX） / Install from VSIX
 
-### VS Code の UI から以下を実施
+### From VS Code UI(VSIX)
 1. VS Code を開く
 2. 拡張機能ビュー（Ctrl+Shift+X / Cmd+Shift+X）を開く
 3. 右上の「…」メニュー → **VSIXからのインストール...** を選択
 4. 作成した `.vsix` ファイル（例: `extension.vsix`）を選択
 5. Reloadを実行
+
+### From Powershell(VSIX)
+以下コマンドを実行
+```powershell
+$URL = "https://github.com/EitaroSeta/excel-vba-sync/releases/latest/download/extension.vsix"
+$OUT = "$env:TEMP\extension.vsix"
+curl.exe -L --fail $URL -o $OUT
+code --install-extension $OUT
+```
+### From Marketplace
+1. [Visual Studio Marketplace - excel-vba-sync](https://marketplace.visualstudio.com/items?itemName=9kv8xiyi.excel-vba-sync)  
+2. Visual Studio Code を開き、拡張機能ビューからインストール
+

@@ -93,7 +93,7 @@ class FileTreeItem extends vscode.TreeItem {
         }
       : undefined;
 
-    // 右クリ用の判定
+    // 右クリッく用の判定
     this.contextValue = (ext === '.frx') ? 'binaryFrx' : 'vbaModuleFile';
 
   }
@@ -180,12 +180,17 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('excel-vba-sync.exportVBA', async (fp?: string) => {
-      const folder = fp || context.globalState.get<string>('vbaExportFolder');
-
-      if (!folder) {
-        return vscode.window.showErrorMessage(t('extension.error.exportFolderNotConfigured'));
+      // フォルダの取得
+      const folder = (typeof fp === 'string' ? fp : context.globalState.get<string>('vbaExportFolder'));
+      if (!folder || typeof folder !== 'string') {
+        vscode.window.showErrorMessage(t('extension.error.exportFolderNotConfigured'));
+        return;
       }
+      /*if (!folder) {
+        return vscode.window.showErrorMessage(t('extension.error.exportFolderNotConfigured'));
+      }*/
 
+      // スクリプトのパス
       const script = path.join(context.extensionPath, 'scripts', 'export_opened_vba.ps1');
       const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${script}" "${folder}"`;
       await vscode.window.withProgress({
