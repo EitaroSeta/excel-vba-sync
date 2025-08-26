@@ -40,15 +40,24 @@ if (-Not (Test-Path $localePath)) {
 
 $messages = Get-Content $localePath -Encoding UTF8 -Raw | ConvertFrom-Json
 
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+#[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$InformationPreference = 'Continue'
+function Get-Timestamp {
+    Get-Date -Format 'yyyy-MM-dd HH:mm:ss'  # → [YYYY-MM-DD HH:mm:ss]
+}
 
 if (-not $InputFile) {
-    Write-Host ($messages."import.error.noImportFolder")
+    #Write-Host ($messages."import.error.noImportFolder")
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'common.error.noImportFolder'
+    Write-host $msg
     exit 1
 }
 
 if ($InputFile -and -not (Test-Path $InputFile)) {
-    Write-Host ($messages."import.error.invalidImportFolder" -f $InputFile)
+    #Write-Host ($messages."import.error.invalidImportFolder" -f $InputFile)
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.error.invalidImportFolder" -f $InputFile)
+    Write-host $msg
     exit 2
 }
 
@@ -69,19 +78,25 @@ function Import-ModuleToVBProject {
     # インポートするファイルの親フォルダ名がブック名と異なるならスキップ（同名モジュール対策）
     if ($parentDirName -ne $bookName) {
         #Write-Host "■ モジュール[$modName] の格納フォルダ[$parentDirName] とインポート先ブック名[$bookName] が異なるためスキップします"
-        Write-Host ($messages."import.warn.skipDifferentFolder" -f $modName, $parentDirName, $bookName)
+        #Write-Host ($messages."import.warn.skipDifferentFolder" -f $modName, $parentDirName, $bookName)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.warn.skipDifferentFolder" -f $modName, $parentDirName, $bookName)
+        Write-host $msg
         return $false
     }
 
     # Excelブックに存在しないモジュールはスキップ
     if (-not ($existingModuleNames -contains $modName)) {
         #Write-Host "■ モジュール：$modName は Excel ブック $($vbproject.FileName) に存在しません。スキップします"
-        Write-Host ($messages."import.warn.moduleNotFound" -f $modName, $vbproject.FileName)
+        #Write-Host ($messages."import.warn.moduleNotFound" -f $modName, $vbproject.FileName)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.warn.moduleNotFound" -f $modName, $vbproject.FileName)
+        Write-host $msg
         return
     }
     else {
         #Write-Host "■ モジュール：$modName を Excel ブック $($vbproject.FileName) へインポートします"
-        Write-Host ($messages."import.info.importModule" -f $modName, $vbproject.FileName)
+        #Write-Host ($messages."import.info.importModule" -f $modName, $vbproject.FileName)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.importModule" -f $modName, $vbproject.FileName)
+        Write-host $msg
     }
 
     $raw = Get-Content -Path $importPath -Encoding utf8
@@ -100,12 +115,16 @@ function Import-ModuleToVBProject {
             $targetComp.CodeModule.DeleteLines(1, $targetComp.CodeModule.CountOfLines)
             $targetComp.CodeModule.AddFromString($code)
             #Write-Host "■ (Doc) $modName 上書き完了しました"
-            Write-Host ($messages."import.info.moduleOverwriteComplete" -f $modName)
+            #Write-Host ($messages."import.info.moduleOverwriteComplete" -f $modName)
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.moduleOverwriteComplete" -f $modName)
+            Write-host $msg
             return
         } else {
             $vbproject.VBComponents.Remove($targetComp)
             #Write-Host "■ $modName を削除して再追加します"
-            Write-Host ($messages."import.info.moduleRemoved" -f $modName)
+            #Write-Host ($messages."import.info.moduleRemoved" -f $modName)
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.moduleRemoved" -f $modName)
+            Write-host $msg
         }
     } catch {}
 
@@ -114,11 +133,15 @@ function Import-ModuleToVBProject {
         $newComp.Name = $modName
         $newComp.CodeModule.AddFromString($code)
         #Write-Host "■ $modName を追加しました"
-        Write-Host ($messages."import.info.moduleAdded" -f $modName)
+        #Write-Host ($messages."import.info.moduleAdded" -f $modName)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.moduleAdded" -f $modName)
+        Write-host $msg
         return $true
     } catch {
         #Write-Host "■ $modName の追加に失敗しました: $_"
-        Write-Host ($messages."import.error.moduleAddFailed" -f $modName, $_)
+        #Write-Host ($messages."import.error.moduleAddFailed" -f $modName, $_)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.error.moduleAddFailed" -f $modName, $_)
+        Write-host $msg
         return $false
     }
 }
@@ -169,23 +192,31 @@ function Import-FormToVBProject {
 
     # インポートするファイルの親フォルダ名がブック名と異なるならスキップ（同名モジュール対策）
     if ($parentDirName -ne $bookName) {
-        Write-Host ($messages."import.warn.skipDifferentFolder" -f $base, $parentDirName, $bookName)
+        #Write-Host ($messages."import.warn.skipDifferentFolder" -f $base, $parentDirName, $bookName)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.warn.skipDifferentFolder" -f $base, $parentDirName, $bookName)
+        Write-host $msg
         return $false
     }
     
     # Excelブックに存在しないモジュールはスキップ
     if (-not ($existingModuleNames -contains $base)) {
-        Write-Host ($messages."import.warn.moduleNotFound" -f $base, $vbproject.FileName)
+        #Write-Host ($messages."import.warn.moduleNotFound" -f $base, $vbproject.FileName)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.warn.moduleNotFound" -f $base, $vbproject.FileName)
+        Write-host $msg
         return $false
     } else {
-        Write-Host ($messages."import.info.importModule" -f $base, $vbproject.FileName)
+        #Write-Host ($messages."import.info.importModule" -f $base, $vbproject.FileName)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.importModule" -f $base, $vbproject.FileName)
+        Write-host $msg
     }
 
     # FormはSJISで扱う
     $tmpFrm = Convert-Frm-Utf8-ToSjisTemp -frmPath $frmPath
 
     if (-not (Test-Path $frx)) {
-        Write-Host ($messages."import.error.frxNotFound2" -f $base , $frx )
+        #Write-Host ($messages."import.error.frxNotFound2" -f $base , $frx )
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.error.frxNotFound2" -f $base , $frx )
+        Write-host $msg
         return $false
     }
 
@@ -200,7 +231,10 @@ function Import-FormToVBProject {
     try {
         $existing = $vbproject.VBComponents.Item($base)
         $vbproject.VBComponents.Remove($existing)
-        Write-Host ($messages."import.info.frmModuleRemoved" -f $base)
+        #Write-Host ($messages."import.info.frmModuleRemoved" -f $base)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.frmModuleRemoved" -f $base)
+        Write-host $msg
+
     } catch {}
 
     # Import（ .frx も自動で取り込まれる）
@@ -213,11 +247,15 @@ function Import-FormToVBProject {
         }
 
         try { $comp.Name = $base } catch {}
-        Write-Host ($messages."import.info.frmModuleImportCompleted" -f $base,  $frmPath, $filename, $comp.Type)
+        #Write-Host ($messages."import.info.frmModuleImportCompleted" -f $base,  $frmPath, $filename, $comp.Type)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.frmModuleImportCompleted" -f $base,  $frmPath, $filename)
+        Write-host $msg
         return $true
 
     } catch {
-        Write-Host ($messages."import.error.frmModuleImportFailed" -f $base, $_)
+        #Write-Host ($messages."import.error.frmModuleImportFailed" -f $base, $_)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.error.frmModuleImportFailed" -f $base, $_)
+        Write-host $msg
         return $false
     }
 }
@@ -230,7 +268,9 @@ function Get-ComProp {
 try {
     $excel = [Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application")
 } catch {
-    Write-Host ($messages."common.error.noExcel")
+    #Write-Host ($messages."common.error.noExcel")
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."common.error.noExcel")
+    Write-host $msg
     exit 3
 }
 
@@ -251,7 +291,9 @@ for ($i = 1; $i -le $excel.Workbooks.Count; $i++) {
 }
 
 if ($workbooks.Count -eq 0) {
-    Write-Host ($messages."common.error.noSavedWorkbook")
+    #Write-Host ($messages."common.error.noSavedWorkbook")
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."common.error.noSavedWorkbook")
+    Write-host $msg 
     exit 4
 }
 
@@ -284,12 +326,15 @@ $i = 1
 foreach ($wb in $workbooks) {
     $vbproject = $wb.VBProject
     if ($vbproject.Protection -ne 0) {
-       Write-Host ($messages."import.warn.protectedWorkbook" -f $i , $wb.Name)
+       #Write-Host ($messages."import.warn.protectedWorkbook" -f $i , $wb.Name)
+       $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.warn.protectedWorkbook" -f $i , $wb.Name)
+       Write-host $msg
         $i++
         continue
     }
     else{
-        Write-Host ($messages."import.info.operationPossible" -f $i , $wb.Name)
+        #Write-Host ($messages."import.info.operationPossible" -f $i , $wb.Name)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.operationPossible" -f $i , $wb.Name)
     }
 
     $bookName = [System.IO.Path]::GetFileNameWithoutExtension($wb.Name)
@@ -301,11 +346,15 @@ foreach ($wb in $workbooks) {
     }
 
     if (-not (Test-Path $bookDir)) {
-        Write-Host ($messages."import.warn.importDirNotFound" -f $i, $bookDir)
+        #Write-Host ($messages."import.warn.importDirNotFound" -f $i, $bookDir)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.warn.importDirNotFound" -f $i, $bookDir)
+        Write-host $msg
         $i++
         continue
     }else {
-        Write-Host ($messages."import.info.importDirChecked" -f $i, $bookDir)
+        #Write-Host ($messages."import.info.importDirChecked" -f $i, $bookDir)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.importDirChecked" -f $i, $bookDir)
+        Write-host $msg
     }
 
     #ファイルの場合とフォルダの場合でファイル名取得処理を分ける
@@ -315,14 +364,18 @@ foreach ($wb in $workbooks) {
         Get-ChildItem -Path $InputFile -Include *.bas, *.cls, *.frm  -Recurse
     }
 
-    Write-Host ($messages."import.info.targetFiles" -f $i, ($targetFiles -join ", "))
+    #Write-Host ($messages."import.info.targetFiles" -f $i, ($targetFiles -join ", "))
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.targetFiles" -f $i, ($targetFiles -join ", "))
+    Write-host $msg
 
     # インポート先のEXCEL-VBAモジュール名一覧を事前に取得
     $existingModuleNames = @()
     foreach ($comp in $vbproject.VBComponents) {
       $existingModuleNames += $comp.Name
     }
-    Write-Host ($messages."import.info.existingModules" -f $i, ($existingModuleNames -join ", "))
+    #Write-Host ($messages."import.info.existingModules" -f $i, ($existingModuleNames -join ", "))
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.existingModules" -f $i, ($existingModuleNames -join ", "))
+    Write-host $msg
 
     # インポート元のファイル単位でループ
     foreach ($file in $targetFiles) {
@@ -332,7 +385,7 @@ foreach ($wb in $workbooks) {
         if ($ext -eq ".frm") {
           $ok = Import-FormToVBProject -filename $wb.Name -vbproject $vbproject -frmPath $file.FullName -existingModuleNames $existingModuleNames
           if ($ok) {
-            $anySuccess = $true 
+            $anySuccess = $true
           }
           continue
         }
@@ -356,9 +409,13 @@ foreach ($wb in $workbooks) {
 }
 
 if (-not $anySuccess) {
-    Write-Host ($messages."import.error.importFailedOrNoTarget")
+    #Write-Host ($messages."import.error.importFailedOrNoTarget")
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.error.importFailedOrNoTarget")
+    Write-host $msg
     exit 5
 }
 
-Write-Host ($messages."commoninfo.importCompleted")
+#Write-Host ($messages."commoninfo.importCompleted")
+$msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."commoninfo.importCompleted")
+Write-host $msg
 exit 0

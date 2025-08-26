@@ -49,11 +49,18 @@ It enables **bidirectional sync** between Excel and VSCode.
 **モジュールの新規追加はできません**
 >既存のモジュール/クラス/フォームを入替えを行う仕組みの為、新規の追加はできません。 新規に作成する場合は空のモジュールを追加・保存したうえでエクスポートしてください。
 
+**EXCELファイルは必ずバックしてください**
+>この拡張機能はEXCELファイルを外部から操作する仕組みなので、条件によりファイルを破損させる恐れがあります。EXCELファイルのバックアップを必ず取ってから連携させて下さい。
+
 **Do **not** edit attributes of exported `.frm` files**
 > Do **not edit the attribute lines** in exported **`.frm` (UserForm)** files. Changing `VERSION`, `Begin … End`, `Object = …`, or any `Attribute VB_*` (e.g., `VB_Name`, `VB_PredeclaredId`, `VB_Exposed`, `VB_Creatable`) can cause **re-import failures**,  and **loss of linkage** to the original form.  
 
 **New modules, classes, or forms cannot be added;**
 >New modules, classes, or forms cannot be added; this tool only replaces existing ones.If you need to create a new item, first add and save a blank module/class/form in the VBE, then export it.
+
+**Please back up your EXCEL files**
+>This extension operates externally on EXCEL files, so depending on the conditions, there is a risk of corrupting the file. Please make sure to always back up your EXCEL files before linking them with this extension.
+
 ---
 
 ## 🛠 開発者向け情報 / Development (for GitHub users)

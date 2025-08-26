@@ -41,27 +41,41 @@ if (-Not (Test-Path $localePath)) {
 $messages = Get-Content $localePath -Encoding UTF8 -Raw | ConvertFrom-Json
 
 # UTF-8で出力されるよう設定
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+#[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$InformationPreference = 'Continue'
+function Get-Timestamp {
+    Get-Date -Format 'yyyy-MM-dd HH:mm:ss'  # → [YYYY-MM-DD HH:mm:ss]
+}
 
 # 引数チェック
 if (-not $OutputDir) {
-    Write-Host $messages."common.error.noPath"
+    #Write-Host ($messages."common.error.noPath")
+    # タイムスタンプ付きでエラー出力（拡張側で *>&1 していれば拾う）
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'common.error.noPath'
+    Write-host $msg
     exit 1
 }
 
 # OneDrive 配下なら中止
 if ($OutputDir -like "$env:OneDrive*") {
-    Write-host ($messages."common.error.oneDriveFolder")
+    #Write-host ($messages."common.error.oneDriveFolder")
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'common.error.oneDriveFolder'
+    Write-host $msg
     exit 2
 }
 
 # エクスポート先フォルダ
-Write-Host ($messages."export.info.exportFolderName" -f $OutputDir)
+#Write-Host ($messages."export.info.exportFolderName" -f $OutputDir)
+$msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportFolderName' -f $OutputDir
+Write-host $msg
 
 # 出力フォルダの存在確認
 if (-not (Test-Path $OutputDir)) {
     #New-Item -ItemType Directory -Path $OutputDir | Out-Null
-    Write-Host ($messages."export.error.invalidFolder" -f $OutputDir)
+    #Write-Host ($messages."export.error.invalidFolder" -f $OutputDir)
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.invalidFolder' -f $OutputDir
+    Write-host $msg
     exit 5
 }
 
@@ -69,21 +83,25 @@ if (-not (Test-Path $OutputDir)) {
 try {
     $excel = [Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application")
 } catch {
-    Write-Host $messages."common.error.noExcel"
+    #Write-Host $messages."common.error.noExcel"
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'common.error.noExcel'
+    Write-host $msg
     exit 3
 }
 
 # Excelウィンドウを明示的にアクティブにする
 $excel.Visible = $true
-$excel.Windows.Item(1).Activate()
+[void] $excel.Windows.Item(1).Activate() 
 Start-Sleep -Milliseconds 300
 
 # VBE を可視化・プロジェクトウィンドウにフォーカス
 $excel.VBE.MainWindow.Visible = $true
 foreach ($window in $excel.VBE.Windows) {
     if ($window.Caption -like "*Project*") {
-        $window.SetFocus()
-        Write-Host $messages."export.info.excelFocus"
+        $window.SetFocus() 
+        #Write-Host $messages."export.info.excelFocus"
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.excelFocus'
+        Write-host $msg
         break
     }
 }
@@ -98,7 +116,9 @@ for ($i = 1; $i -le $excel.Workbooks.Count; $i++) {
 }
 
 if ($workbooks.Count -eq 0) {
-    Write-host $messages."common.error.noSavedWorkbook"
+    #Write-host $messages."common.error.noSavedWorkbook"
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'common.error.noSavedWorkbook'
+    Write-host $msg
     exit 4
 }
 
@@ -112,7 +132,9 @@ foreach ($wb in $workbooks) {
             Write-Host ($messages."export.info.autoSaveCanceled" -f $wb.Name)
         }
     } catch {
-        Write-Host ($messages."export.error.autoSaveCancelFailed" -f $wb.Name)
+        #Write-Host ($messages."export.error.autoSaveCancelFailed" -f $wb.Name)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.autoSaveCancelFailed' -f $wb.Name
+        Write-host $msg
     }
 }
 
@@ -126,7 +148,9 @@ foreach ($wb in $workbooks) {
     }
 
     if ($project.Protection -ne 0) {
-        Write-Host ($messages."export.warn.protectedVBProject" -f $wb.Name)
+        #Write-Host ($messages."export.warn.protectedVBProject" -f $wb.Name)
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.protectedVBProject' -f $wb.Name
+        Write-host $msg
         continue
     }
 
@@ -150,12 +174,18 @@ foreach ($wb in $workbooks) {
                 if ($lineCount -gt 0) {
                     $codeText = $codeModule.Lines(1, $lineCount)
                     Set-Content -Path $filename -Value $codeText -Encoding Default
-                    Write-Host ($messages."export.info.exportFallbackSuccess100" -f $filename)
+                    #Write-Host ($messages."export.info.exportFallbackSuccess100" -f $filename)
+                    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportFallbackSuccess100' -f $filename
+                    Write-host $msg
                 } else {
-                    Write-Host ($messages."export.warn.exportEmptyCode" -f $name)
+                    #Write-Host ($messages."export.warn.exportEmptyCode" -f $name)
+                    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.exportEmptyCode' -f $name
+                    Write-host $msg
                 }
             } catch {
-                Write-Host ($messages."export.error.exportFailed100" -f $filename ,$_)
+                #Write-Host ($messages."export.error.exportFailed100" -f $filename ,$_)
+                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFailed100' -f $filename ,$_
+                Write-host $msg
             }
             continue
         }
@@ -165,16 +195,22 @@ foreach ($wb in $workbooks) {
             $codeModule = $component.CodeModule
             $lineCount = $codeModule.CountOfLines
             if ($lineCount -eq 0) {
-                Write-Host ($messages."export.warn.exportEmptyModule" -f $name)
+                #Write-Host ($messages."export.warn.exportEmptyModule" -f $name)
+                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.exportEmptyModule' -f $name
+                Write-host $msg
                 continue
             }
             $codeText = $codeModule.Lines(1, $lineCount)
             if ($codeText -notmatch '\b(Sub|Function|Property)\b') {
-                Write-Host ($messages."export.warn.noCodeToExport" -f $name)
+                #Write-Host ($messages."export.warn.noCodeToExport" -f $name)
+                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.noCodeToExport' -f $name
+                Write-host $msg
                 continue
             }
         } catch {
-            Write-Host ($messages."export.error.codeFetchFailed" -f $name, $_)
+            #Write-Host ($messages."export.error.codeFetchFailed" -f $name, $_)
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.codeFetchFailed' -f $name, $_
+            Write-host $msg
             continue
         }
 
@@ -196,12 +232,16 @@ foreach ($wb in $workbooks) {
                 break
             } catch {
                 Start-Sleep -Milliseconds 200
-                Write-Host ($messages."export.error.exportFailedModule" -f $i, $filename, $_)
+                #Write-Host ($messages."export.error.exportFailedModule" -f $i, $filename, $_)
+                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFailedModule' -f $i, $filename, $_
+                Write-host $msg
             }
         }
 
         if ($success) {
-            Write-Host ($messages."export.info.exportSuccess" -f $filename)
+            #Write-Host ($messages."export.info.exportSuccess" -f $filename)
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportSuccess' -f $filename
+            Write-host $msg
             continue
         }
 
@@ -210,15 +250,21 @@ foreach ($wb in $workbooks) {
             $codeModule = $component.CodeModule
             $lineCount = $codeModule.CountOfLines
             if ($lineCount -eq 0) {
-                Write-Host ($messages."export.warn.exportEmptyModule" -f $name)
+                #Write-Host ($messages."export.warn.exportEmptyModule" -f $name)
+                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.exportEmptyModule' -f $name
+                Write-host $msg
                 continue
             }
             $codeText = $codeModule.Lines(1, $lineCount)
             Set-Content -Path $filename -Value $codeText -Encoding UTF8
-            Write-Host ($messages."export.info.exportFallbackSuccess" -f $filename)
+            #Write-Host ($messages."export.info.exportFallbackSuccess" -f $filename)
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportFallbackSuccess' -f $filename
+            Write-host $msg
 
         } catch {
-            Write-Host ($messages."export.error.exportFinalFailed" -f $filename)
+            #Write-Host ($messages."export.error.exportFinalFailed" -f $filename)
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFinalFailed' -f $filename
+            Write-host $msg
         }
     }
 }
@@ -230,16 +276,24 @@ foreach ($wb in $workbooks) {
         try {
             if ($wb.AutoSaveOn -ne $desiredState) {
                 $wb.AutoSaveOn = $desiredState
-                Write-Host ($messages."info.autoSaveRestored" -f $wb.Name, $desiredState)
+                #Write-Host ($messages."info.autoSaveRestored" -f $wb.Name, $desiredState)
+                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'info.autoSaveRestored' -f $wb.Name, $desiredState
+                Write-host $msg
             } else {
-                Write-Host ($messages."export.info.autoSaveAlreadyRestored" -f $wb.Name)
+                #Write-Host ($messages."export.info.autoSaveAlreadyRestored" -f $wb.Name)
+                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.autoSaveAlreadyRestored' -f $wb.Name
+                Write-host $msg
             }
         } catch {
-            Write-Host ($messages."export.error.autoSaveRestoreFailed" -f $wb.Name, $_)
+            #Write-Host ($messages."export.error.autoSaveRestoreFailed" -f $wb.Name, $_)
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.autoSaveRestoreFailed' -f $wb.Name, $_
+            Write-host $msg
         }
     }
 }
 
-Write-Host ($messages."export.info.exportModuleComplete" -f $OutputDir)
+#Write-Host ($messages."export.info.exportModuleComplete" -f $OutputDir)
+$msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportModuleComplete' -f $OutputDir
+Write-Host  $msg
 
 exit 0
