@@ -9,11 +9,11 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
-## [0.0.10] - 2025-08-23
-### Added
-- **Initial public release on VS Code Marketplace.**
-- Commands to **Export** / **Import** VBA modules against the *opened* Excel project.
-- Localization: **en** / **ja**.
+## [0.0.16] - 2025-08-28
+### ### Changed
+- Fine-tuned message text.
+- Added export file extension check（*.xlsm/*.xlsb only）
+- Added import file extension check（*.bas/*.cls/*.frm only）
 
 ## [0.0.15] - 2025-08-26
 ### ### Changed
@@ -23,6 +23,12 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### ### Fixed
 - Fixed a bug where a file dialog appeared when no folder was specified during import.
+
+## [0.0.10] - 2025-08-23
+### Added
+- **Initial public release on VS Code Marketplace.**
+- Commands to **Export** / **Import** VBA modules against the *opened* Excel project.
+- Localization: **en** / **ja**.
 
 ### Notes
 - **Limitation**: This tool **replaces existing** modules/classes/forms only; **adding new items is not supported**.  

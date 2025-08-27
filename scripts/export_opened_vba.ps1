@@ -111,7 +111,14 @@ $workbooks = @()
 for ($i = 1; $i -le $excel.Workbooks.Count; $i++) {
     $wb = $excel.Workbooks.Item($i)
     if ($wb.Path -ne "") {
-        $workbooks += $wb
+        $ext = [System.IO.Path]::GetExtension($wb.Name).ToLower()
+        if ($ext -eq ".xlsm" -or $ext -eq ".xlsb") {
+          $workbooks += $wb
+        } else {
+            # マクロファイル以外はスキップ
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.nonMacroFileSkipped' -f $wb.Name
+            Write-host $msg
+        }
     }
 }
 

@@ -48,6 +48,8 @@ function loadMessages(context: vscode.ExtensionContext) {
   }
 
 }
+
+// Simple i18n function
 function t(key: string, values?: Record<string, string>) {
   let msg = messages[key] || key;
   if (values) {
@@ -58,6 +60,7 @@ function t(key: string, values?: Record<string, string>) {
   return msg;
 }
 
+// Get current timestamp
 function getTimestamp(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -97,7 +100,7 @@ class FileTreeItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon('file');
     }
 
-    // クリック動作：.frx は開かせない
+    // クリック動作：.frx は開かないようにする
     this.command = (isFile && ext !== '.frx')
       ? { 
           command: 'vscode.open', 
@@ -283,6 +286,7 @@ export function activate(context: vscode.ExtensionContext) {
               //vscode.window.showErrorMessage(t('common.error.exportFailed', { 0: exitCode.toString(), 1: errStr }));
               outputChannel.appendLine(`[${timestamp}] ${t('common.error.exportFailed', { 0: exitCode.toString(), 1: errStr })}`);
               outputChannel.show();
+              treeProvider.refresh();
               break;
           }
           resolve();
@@ -317,6 +321,14 @@ export function activate(context: vscode.ExtensionContext) {
       //  outputChannel.show();
       //  return;
       //}
+
+      // ファイル拡張子のチェック
+      const ext = path.extname(filePath).toLowerCase();
+      if (!['.bas', '.cls', '.frm'].includes(ext)) {
+        outputChannel.appendLine(`[${timestamp}] ${t('extension.error.invalidFileType', { 0: ext })}`);
+        outputChannel.show();
+        return;
+      }
 
       const script = path.join(context.extensionPath, 'scripts', 'import_opened_vba.ps1');
       //const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${script}" "${filePath}"`;
@@ -364,6 +376,7 @@ export function activate(context: vscode.ExtensionContext) {
               //vscode.window.showErrorMessage(t('common.error.invalidImportFolder'));
               outputChannel.appendLine(`[${timestamp}] ${t('common.error.invalidImportFolder')}`);
               outputChannel.show();
+              treeProvider.refresh();
               break;
             case 3:
               //vscode.window.showErrorMessage(t('common.error.noExcel'));
@@ -379,6 +392,7 @@ export function activate(context: vscode.ExtensionContext) {
               //vscode.window.showErrorMessage(t('common.error.importFailed', { 0: exitCode.toString(), 1: errStr }));
               outputChannel.appendLine(`[${timestamp}] ${t('common.error.importFailed')}`);
               outputChannel.show();
+              treeProvider.refresh();
               break;
             case 0:
               //vscode.window.showInformationMessage(t('common.info.importCompleted'));
@@ -394,6 +408,7 @@ export function activate(context: vscode.ExtensionContext) {
               //vscode.window.showErrorMessage(t('common.error.importFailed', { 0: exitCode.toString(), 1: errStr }));
               outputChannel.appendLine(`[${timestamp}] ${t('common.error.importFailed', { 0: exitCode.toString(), 1: errStr })}`);
               outputChannel.show();
+              treeProvider.refresh();
               break;
           }
           resolve();

@@ -1,14 +1,19 @@
-﻿# 📤 VBA Module Sync - VSCode ⇄ Excel
+﻿# 📤 EXCEL VBA module Sync - VSCode ⇄ Excel
+![Installs](https://img.shields.io/visual-studio-marketplace/i/9kv8xiyi.excel-vba-sync)
+![Version](https://img.shields.io/visual-studio-marketplace/v/9kv8xiyi.excel-vba-sync)
+![Rating](https://img.shields.io/visual-studio-marketplace/r/9kv8xiyi.excel-vba-sync)
 
 ## 概要（Japanese）
 
-**VBA Module Sync** は、Excel の VBA モジュールを VSCode 上で編集するための拡張機能です。  
-VBA モジュールのエクスポート・インポートを双方向で行えます。
+**EXCEL VBA module Sync** は、Excel の VBA モジュールを VSCode 上で編集するための拡張機能です。  
+VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内容のVBAへのインポートが行えます。
+Winsdows10/11＋EXCEL＋VSCode環境のみです。
 
 - ✅ Excelから `.bas` / `.cls` / `.frm` 内のコードをエクスポート（保存）
 - ✅ VSCode 上で編集
 - ✅ 編集したモジュールを Excel にインポート（反映）
 - ✅ インポートはモジュール差し替えにて行います
+- ✅ エクスポートしたモジュールファイルはgitで管理しやすいようにUFT-8の文字コードで出力されます。
 
 ### 🔧 主な機能
 
@@ -23,13 +28,15 @@ VBA モジュールのエクスポート・インポートを双方向で行え�
 
 ## Overview (English)
 
-**VBA Module Sync** is a VSCode extension for editing Excel VBA modules.  
-It enables **bidirectional sync** between Excel and VSCode.
+**EXCEL VBA module Sync** is a VSCode extension for editing Excel VBA modules.  
+You can export VBA modules to VS Code and import the content edited in VS Code back into VBA.
+Works in a Windows 10/11 + Excel + VS Code environment only.
 
 - ✅ Export inner code of  `.bas` / `.cls` / `.frm` from Excel
 - ✅ Edit VBA modules in VSCode
 - ✅ Import modules back into Excel
 - ✅ Import is performed by replacing the module.
+- ✅ Exported module files are saved in UTF-8 encoding, making them easier to manage with Git.
 
 ### 🔧 Features
 
@@ -49,8 +56,8 @@ It enables **bidirectional sync** between Excel and VSCode.
 **モジュールの新規追加はできません**
 >既存のモジュール/クラス/フォームを入替えを行う仕組みの為、新規の追加はできません。 新規に作成する場合は空のモジュールを追加・保存したうえでエクスポートしてください。
 
-**EXCELファイルは必ずバックしてください**
->この拡張機能はEXCELファイルを外部から操作する仕組みなので、条件によりファイルを破損させる恐れがあります。EXCELファイルのバックアップを必ず取ってから連携させて下さい。
+**EXCELファイルは必ずバックアップしてください**
+>この拡張機能はEXCELファイルを外部から操作する仕組みなので、条件によりEXCELファイルを破損させる恐れがあります。EXCELファイルのバックアップを必ず取ってから連携させて下さい。
 
 **Do **not** edit attributes of exported `.frm` files**
 > Do **not edit the attribute lines** in exported **`.frm` (UserForm)** files. Changing `VERSION`, `Begin … End`, `Object = …`, or any `Attribute VB_*` (e.g., `VB_Name`, `VB_PredeclaredId`, `VB_Exposed`, `VB_Creatable`) can cause **re-import failures**,  and **loss of linkage** to the original form.  
@@ -65,6 +72,7 @@ It enables **bidirectional sync** between Excel and VSCode.
 
 ## 🛠 開発者向け情報 / Development (for GitHub users)
 このセクションは拡張機能の利用者には不要です。拡張の開発や修正向けの備忘です。  
+https://github.com/EitaroSeta/excel-vba-sync  
 
 ### 前提 / Requirements
 - Windows10/11 + Microsoft Excel（VBA を実行するため）
