@@ -180,7 +180,7 @@ foreach ($wb in $workbooks) {
                 $lineCount = $codeModule.CountOfLines
                 if ($lineCount -gt 0) {
                     $codeText = $codeModule.Lines(1, $lineCount)
-                    Set-Content -Path $filename -Value $codeText -Encoding Default
+                    Set-Content -Path $filename -Value $codeText -Encoding UTF8
                     #Write-Host ($messages."export.info.exportFallbackSuccess100" -f $filename)
                     $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportFallbackSuccess100' -f $filename
                     Write-host $msg

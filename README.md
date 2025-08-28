@@ -20,7 +20,7 @@ Winsdows10/11＋Excel＋VSCode環境のみです。
 | 機能                           | 説明                                      |
 |--------------------------------|-------------------------------------------|
 | Export All Modulus From VBA    | Excel から全モジュールを抽出・保存します。|
-| Import Module To VBA           | VSCode 上で編集したコードを Excel に反映（単一モジュール単位/ファイル単位） |
+| Import Module To VBA           | VSCode 上で編集したコードを Excel に反映（単独モジュール/ファイル） |
 | Set Export Folder              | ダイアログ選択可能                        |
 | コマンドパレット／ボタン対応   | GUI 操作または `Ctrl+Shift+P` から実行可  |
 
@@ -63,7 +63,7 @@ code --install-extension 9kv8xiyi.excel-vba-sync
 ```
 
 ### From github(VSCode)
-1. https://github.com/EitaroSeta/excel-vba-sync/releases/download/latest/extension.vsix よりVSIXをダウンロード
+1. https://github.com/EitaroSeta/excel-vba-sync/releases/download/latest/extension.vsix より`extension.vsix`をダウンロード
 2. VS Code を開く
 3. 拡張機能ビュー（Ctrl+Shift+X / Cmd+Shift+X）を開く
 4. 右上の「…」メニュー → **VSIXからのインストール...** を選択
@@ -85,7 +85,7 @@ code --install-extension "$OUT"
 > エクスポートした **`.frm`（UserForm）** の **属性行は編集しないでください**。`VERSION`、`Begin … End`、`Object = …`、および `Attribute VB_*`（例：`VB_Name` / `VB_PredeclaredId` / `VB_Exposed` / `VB_Creatable` など）を変更すると、**再インポート失敗**・**既存フォームとの紐付け崩れ**が発生します。  
 
 **モジュールの新規追加はできません**
->既存のモジュール/クラス/フォームを入替えを行う仕組みの為、新規の追加はできません。 新規に作成する場合は空のモジュールを追加・保存したうえでエクスポートしてください。
+>既存のモジュール/クラス/フォームを入替えを行う仕組みの為、新規の追加はできません。 VBA上で新規モジュールを追加し、エクスポートしてください。
 
 **EXCELファイルは必ずバックアップしてください**
 >この拡張機能はEXCELファイルを外部から操作する仕組みなので、条件によりEXCELファイルを破損させる恐れがあります。EXCELファイルのバックアップを必ず取ってから連携させて下さい。
@@ -94,7 +94,7 @@ code --install-extension "$OUT"
 > Do **not edit the attribute lines** in exported **`.frm` (UserForm)** files. Changing `VERSION`, `Begin … End`, `Object = …`, or any `Attribute VB_*` (e.g., `VB_Name`, `VB_PredeclaredId`, `VB_Exposed`, `VB_Creatable`) can cause **re-import failures**,  and **loss of linkage** to the original form.  
 
 **New modules, classes, or forms cannot be added;**
->New modules, classes, or forms cannot be added; this tool only replaces existing ones.If you need to create a new item, first add and save a blank module/class/form in the VBE, then export it.
+>New modules, classes, or forms cannot be added; this tool only replaces existing ones.If you need to create a new item, first add a blank module/class/form in the VBE, then export it.
 
 **Please back up your EXCEL files**
 >This extension operates externally on EXCEL files, so depending on the conditions, there is a risk of corrupting the file. Please make sure to always back up your EXCEL files before linking them with this extension.
@@ -102,7 +102,7 @@ code --install-extension "$OUT"
 ---
 
 ## 🛠 開発者向け情報 / Development (for GitHub users)
-このセクションは拡張機能の利用者には不要です。拡張の開発や修正向けの備忘です。  
+このセクションは拡張機能の利用者には不要です。拡張の開発や修正向けの作者の備忘です。  
 https://github.com/EitaroSeta/excel-vba-sync  
 
 ### 前提 / Requirements
