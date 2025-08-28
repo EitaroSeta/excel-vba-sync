@@ -27,7 +27,7 @@
   "export.warn.nonMacroFileSkipped": "【WARN】Powershell: マクロ有効ブック(*.xlsm)/バイナリブック(*.xlsb) ではないためスキップします: {0}",
   "export.info.autoSaveCanceled": "【INFO】Powershell: {0} の自動保存を一時的に無効化しました。",
   "export.error.autoSaveCancelFailed": "【ERROR】Powershell: {0} の自動保存の無効化に失敗しました。",
-  "export.warn.protectedVBProject": "【WARN】Powershell: {0} の VBProject は保護されています。",
+  "export.warn.protectedVBProject": "【WARN】Powershell: {0} の VBProject は保護されています。保護解除後にエクスポートして下さい。",
   "export.info.exportSuccess": "【INFO】Powershell: エクスポート成功: {0}",
   "export.warn.exportEmptyModule": "【WARN】Powershell: {0} はコードが空のため出力しませんでした。",
   "export.info.exportFallbackSuccess": "【INFO】Powershell: フォールバック（Lines）でエクスポート成功: {0}",

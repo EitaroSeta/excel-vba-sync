@@ -7,7 +7,7 @@
 
 **EXCEL VBA module Sync** は、Excel の VBA モジュールを VSCode 上で編集するための拡張機能です。  
 VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内容のVBAへのインポートが行えます。
-Winsdows10/11＋EXCEL＋VSCode環境のみです。
+Winsdows10/11＋Excel＋VSCode環境のみです。
 
 - ✅ Excelから `.bas` / `.cls` / `.frm` 内のコードをエクスポート（保存）
 - ✅ VSCode 上で編集
@@ -48,6 +48,37 @@ Works in a Windows 10/11 + Excel + VS Code environment only.
 | Command Palette / GUI support  | Use commands or side panel buttons                               |
 
 ---
+## 🧩 インストール（VSIX） / Install from VSIX
+
+### From Marketplace
+1. [Visual Studio Marketplace - excel-vba-sync](https://marketplace.visualstudio.com/items?itemName=9kv8xiyi.excel-vba-sync)  
+2. Visual Studio Code を開き、拡張機能ビューからインストール  
+
+## 拡張機能ビューからできない場合は、以下をお試しください。
+
+### From Marketplace(Powershell)
+以下コマンドを実行
+```powershell
+code --install-extension 9kv8xiyi.excel-vba-sync
+```
+
+### From github(VSCode)
+1. https://github.com/EitaroSeta/excel-vba-sync/releases/download/latest/extension.vsix よりVSIXをダウンロード
+2. VS Code を開く
+3. 拡張機能ビュー（Ctrl+Shift+X / Cmd+Shift+X）を開く
+4. 右上の「…」メニュー → **VSIXからのインストール...** を選択
+5. ダウンロードした`extension.vsix` ファイルを選択
+6. Reloadを実行
+
+### From github(Powershell)
+以下コマンドを実行
+```powershell
+$URL = "https://github.com/EitaroSeta/excel-vba-sync/releases/download/latest/extension.vsix"
+$OUT = "$env:TEMP\extension.vsix"
+curl.exe -sS -L -f --retry 3 --retry-delay 2 "$URL" -o "$OUT"
+code --install-extension "$OUT"
+```
+
 ## ⚠重要 / Important ##
 
 **エクスポートした `.frm` の属性は編集しないでください**
@@ -121,24 +152,5 @@ Currently, the following two languages are supported, so please create a *.json 
   ├─ ja.json  
   └─ en.json
 
-## 🧩 インストール（VSIX） / Install from VSIX
 
-### From VS Code UI(VSIX)
-1. VS Code を開く
-2. 拡張機能ビュー（Ctrl+Shift+X / Cmd+Shift+X）を開く
-3. 右上の「…」メニュー → **VSIXからのインストール...** を選択
-4. 作成した `.vsix` ファイル（例: `extension.vsix`）を選択
-5. Reloadを実行
-
-### From Powershell(VSIX)
-以下コマンドを実行
-```powershell
-$URL = "https://github.com/EitaroSeta/excel-vba-sync/releases/latest/download/extension.vsix"
-$OUT = "$env:TEMP\extension.vsix"
-curl.exe -L --fail $URL -o $OUT
-code --install-extension $OUT
-```
-### From Marketplace
-1. [Visual Studio Marketplace - excel-vba-sync](https://marketplace.visualstudio.com/items?itemName=9kv8xiyi.excel-vba-sync)  
-2. Visual Studio Code を開き、拡張機能ビューからインストール
 

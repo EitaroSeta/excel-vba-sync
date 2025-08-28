@@ -27,7 +27,7 @@
   "export.warn.nonMacroFileSkipped": "【WARN】Powershell: Skipped non-macro-enabled (*.xlsm) or binary (*.xlsb) workbook: {0}",
   "export.info.autoSaveCanceled": "【INFO】Powershell: Temporarily disabled AutoSave for {0}.",
   "export.error.autoSaveCancelFailed": "【ERROR】Powershell: Failed to disable AutoSave for {0}.",
-  "export.warn.protectedVBProject": "【WARN】Powershell: VBProject in {0} is protected.",
+  "export.warn.protectedVBProject": "【WARN】Powershell: VBProject in {0} is protected. Please unprotect it before exporting.",
   "export.info.exportSuccess": "【INFO】Powershell: Export succeeded: {0}",
   "export.warn.exportEmptyModule": "【WARN】Powershell: {0} has no code; skipped.",
   "export.info.exportFallbackSuccess": "【INFO】Powershell: Export succeeded with fallback (Lines): {0}",

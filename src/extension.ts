@@ -174,8 +174,8 @@ class VbaSyncViewProvider implements vscode.WebviewViewProvider {
         button { width: 100%; margin: 5px 0; font-size: 14px; }
       </style></head>
       <body>
-        <button onclick="vscode.postMessage({ command: 'export' })">�? Export VBA Modules</button>
-        <button onclick="vscode.postMessage({ command: 'import' })">�? Import VBA Modules</button>
+        <button onclick="vscode.postMessage({ command: 'export' })"> Export VBA Modules</button>
+        <button onclick="vscode.postMessage({ command: 'import' })"> Import VBA Modules</button>
         <script>const vscode = acquireVsCodeApi();</script>
       </body>
       </html>

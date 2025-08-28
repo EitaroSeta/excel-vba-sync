@@ -1,4 +1,4 @@
-# Changelog
+Ôªø# Changelog
 All notable changes to the "excel-vba-sync" extension are documented here.
 
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
@@ -9,11 +9,15 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.17] - 2025-08-28
+### ### Changed
+- Minor README correction
+
 ## [0.0.16] - 2025-08-28
 ### ### Changed
 - Fine-tuned message text.
-- Added export file extension checkÅi*.xlsm/*.xlsb onlyÅj
-- Added import file extension checkÅi*.bas/*.cls/*.frm onlyÅj
+- Added export file extension checkÔºà*.xlsm/*.xlsb onlyÔºâ
+- Added import file extension checkÔºà*.bas/*.cls/*.frm onlyÔºâ
 
 ## [0.0.15] - 2025-08-26
 ### ### Changed
@@ -34,5 +38,5 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Limitation**: This tool **replaces existing** modules/classes/forms only; **adding new items is not supported**.  
   To create a new item, add & save a blank module/class/form in VBE, then export it.
 - **Caution**: Do **not edit attribute lines** in exported `.frm` files  
-  (`VERSION`, `Begin Åc End`, `Object = Åc`, `Attribute VB_*`).
+  (`VERSION`, `Begin ‚Ä¶ End`, `Object = ‚Ä¶`, `Attribute VB_*`).
 
