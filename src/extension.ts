@@ -72,6 +72,21 @@ function getTimestamp(): string {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
+// Watch a folder for changes
+function watchFolder(folderPath: string, treeProvider: SimpleTreeProvider) {
+  fs.watch(folderPath, { recursive: true }, (eventType, filename) => {
+    const timestamp = getTimestamp();
+    if (filename) {
+      //outputChannel.appendLine(`[${timestamp}] Change detected: ${eventType} - ${filename}`);
+      //outputChannel.show();
+      treeProvider.refresh(); // ツリービューを更新
+    } else {
+      //outputChannel.appendLine(`[${timestamp}] Change detected, but filename is undefined.`);
+      //outputChannel.show();
+    }
+  });
+}
+
 /** Tree Item */
 class FileTreeItem extends vscode.TreeItem {
   constructor(
@@ -197,6 +212,12 @@ export function activate(context: vscode.ExtensionContext) {
   const folderPath = context.globalState.get<string>('vbaExportFolder');
   const treeProvider = new SimpleTreeProvider(folderPath);
   const treeView = vscode.window.createTreeView('exportPanel', { treeDataProvider: treeProvider });
+
+  // Watch the folder for changes
+  if (folderPath) {
+    watchFolder(folderPath, treeProvider);
+  }
+
   const timestamp = getTimestamp();
 
   context.subscriptions.push(

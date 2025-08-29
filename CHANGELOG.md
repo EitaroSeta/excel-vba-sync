@@ -9,9 +9,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.19] - 2025-08-29
+### ### Added
+- Monitor the folder for changes and refresh the directory and file information.
+
 ## [0.0.18] - 2025-08-28
 ### ### Fixed
-- Fix the character encoding to UTF-8 when exporting forms.
+- Fix the character encoding to UTF-8 when exporting workbook modules.
 
 ## [0.0.17] - 2025-08-28
 ### ### Changed
