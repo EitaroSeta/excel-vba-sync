@@ -9,13 +9,17 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.21] - 2025-08-30
+### ### Fixed
+- Fixed import issue from statusbar.
+
 ## [0.0.20] - 2025-08-30
 ### ### Added
 - Enabled importing files via right-click.
 
 ### ### Fixed
 - Aligned ATTRIBUTE output of files with VBE output.
-- Fixed import issue with cls files
+- Fixed import issue with cls files.
 
 ## [0.0.19] - 2025-08-29
 ### ### Added

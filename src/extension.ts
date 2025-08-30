@@ -334,12 +334,30 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('excel-vba-sync.importVBA', async (item: FileTreeItem) => {
       let filePath: string;
       const timestamp = getTimestamp();
-      if (!item || !(item.uri instanceof vscode.Uri)) {
-        outputChannel.appendLine(`[${timestamp}] ${t('extension.error.noFileSelected')}`);
-        outputChannel.show();
-        return;
+      //if (!item || !(item.uri instanceof vscode.Uri)) {
+      //  outputChannel.appendLine(`[${timestamp}] ${t('extension.error.noFileSelected')}`);
+      //  outputChannel.show();
+      //  return;
+      //}
+      //filePath = item.uri.fsPath;
+      if (!item) {
+        const result = await vscode.window.showOpenDialog({
+          canSelectFolders: true,
+          canSelectFiles: false,
+          canSelectMany: false,
+          openLabel: 'Select Folder'
+        });
+
+        if (!result || result.length === 0) {
+          outputChannel.appendLine(`[${timestamp}] ${t('extension.error.noFileSelected')}`);
+          outputChannel.show();
+          return;
+        }
+        filePath = result[0].fsPath;
+      } else {
+          filePath = item.uri.fsPath;
       }
-      filePath = item.uri.fsPath;
+
       if (!filePath || filePath.length === 0) {
          //vscode.window.showWarningMessage(t('extension.error.noFileSelected'));
          outputChannel.appendLine(`[${timestamp}] ${t('extension.error.noFileSelected')}`);
@@ -356,9 +374,10 @@ export function activate(context: vscode.ExtensionContext) {
       //  return;
       //}
 
-      // ファイル拡張子のチェック
+      // directory check and file type check
+      const isDirectory = fs.statSync(filePath).isDirectory();
       const ext = path.extname(filePath).toLowerCase();
-      if (!['.bas', '.cls', '.frm'].includes(ext)) {
+      if (!isDirectory && !['.bas', '.cls', '.frm'].includes(ext)) {
         outputChannel.appendLine(`[${timestamp}] ${t('extension.error.invalidFileType', { 0: ext })}`);
         outputChannel.show();
         return;
