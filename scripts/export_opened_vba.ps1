@@ -233,8 +233,8 @@ foreach ($wb in $workbooks) {
                 $success = $true
 
                 # š •s—v‚È Attribute s‚ğíœ
-                $filtered = Get-Content $filename | Where-Object { $_ -notmatch '^Attribute VB_' }
-                Set-Content -Encoding UTF8 $filename -Value $filtered
+                #$filtered = Get-Content $filename | Where-Object { $_ -notmatch '^Attribute VB_' }
+                #Set-Content -Encoding UTF8 $filename -Value $filtered
 
                 break
             } catch {

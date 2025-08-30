@@ -128,21 +128,34 @@ function Import-ModuleToVBProject {
         }
     } catch {}
 
-    try {
-        $newComp = $vbproject.VBComponents.Add(1)
-        $newComp.Name = $modName
-        $newComp.CodeModule.AddFromString($code)
-        #Write-Host "■ $modName を追加しました"
-        #Write-Host ($messages."import.info.moduleAdded" -f $modName)
-        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.moduleAdded" -f $modName)
-        Write-host $msg
-        return $true
-    } catch {
-        #Write-Host "■ $modName の追加に失敗しました: $_"
-        #Write-Host ($messages."import.error.moduleAddFailed" -f $modName, $_)
-        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.error.moduleAddFailed" -f $modName, $_)
-        Write-host $msg
-        return $false
+    if ($ext -eq ".cls") {
+      $moduleType = 2 # クラスモジュール
+    } elseif ($ext -eq ".bas") {
+      $moduleType = 1 # 標準モジュール
+    } else {
+      $moduleType = $null
+    }
+
+    if ($moduleType -eq 1 -or $moduleType -eq 2) {
+
+      try {
+          #$newComp = $vbproject.VBComponents.Add(1)
+          $newComp = $vbproject.VBComponents.Add($moduleType)
+          $newComp.Name = $modName
+          $newComp.CodeModule.AddFromString($code)
+          #Write-Host "■ $modName を追加しました"
+          #Write-Host ($messages."import.info.moduleAdded" -f $modName)
+          $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.moduleAdded" -f $modName)
+          Write-host $msg
+          return $true
+      } catch {
+          #Write-Host "■ $modName の追加に失敗しました: $_"
+          #Write-Host ($messages."import.error.moduleAddFailed" -f $modName, $_)
+          $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.error.moduleAddFailed" -f $modName, $_)
+          Write-host $msg
+          return $false
+      }
+
     }
 }
 

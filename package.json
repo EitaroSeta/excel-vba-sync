@@ -2,7 +2,7 @@
     "name": "excel-vba-sync",
     "displayName": "excel-vba-sync",
     "description": "Export VBA modules to VSCode & import them back to Excel.",
-    "version": "0.0.19",
+    "version": "0.0.20",
     "publisher": "9kv8xiyi",
     "license": "MIT",   
     "author": {
@@ -63,7 +63,7 @@
         "excelVbaSync": [
           {
             "id": "exportPanel",
-            "name": "v.0.0.19",
+            "name": "v.0.0.20",
             "icon": "media/icon.png"
           }
         ],
@@ -109,13 +109,20 @@
             "when": "view == exportPanel",
             "group": "navigation"
           }
-        ]
+        ],
+        "view/item/context": [
+        {
+          "command": "excel-vba-sync.importVBA",
+          "when": "viewItem == importableFile",
+          "group": "navigation"
+        }
+       ]  
       },
       "languages": [
         {
             "id": "vb",
             "aliases": ["Visual Basic", "vb"],
-            "extensions": [".frm"]
+            "extensions": [".frm", ".cls"]
         }
       ]
     },

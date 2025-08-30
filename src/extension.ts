@@ -79,7 +79,7 @@ function watchFolder(folderPath: string, treeProvider: SimpleTreeProvider) {
     if (filename) {
       //outputChannel.appendLine(`[${timestamp}] Change detected: ${eventType} - ${filename}`);
       //outputChannel.show();
-      treeProvider.refresh(); // ツリービューを更新
+      treeProvider.refresh(); // Tree view refresh
     } else {
       //outputChannel.appendLine(`[${timestamp}] Change detected, but filename is undefined.`);
       //outputChannel.show();
@@ -109,6 +109,8 @@ class FileTreeItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon('file-binary'); // or 'lock'
     } else if (ext === '.bas') {
       this.iconPath = new vscode.ThemeIcon('file-code');
+    } else if (ext === '.cls') {
+      this.iconPath = new vscode.ThemeIcon('file-code');
     } else if (ext === '.frm') {
       this.iconPath = new vscode.ThemeIcon('file-code');
     } else {
@@ -125,7 +127,18 @@ class FileTreeItem extends vscode.TreeItem {
       : undefined;
 
     // 右クリック用の判定
-    this.contextValue = (ext === '.frx') ? 'binaryFrx' : 'vbaModuleFile';
+    //this.contextValue = (ext === '.frx') ? 'binaryFrx' : 'vbaModuleFile';
+    //this.contextValue = (ext === '.frx') ? 'binaryFrx' : 'vbaModuleFile';
+    //console.log(`Context value: ${this.contextValue}`); // デバッグ用ログ
+    //console.log(`File extension: ${ext}`);
+    if (ext === '.frx') {
+      this.contextValue = 'binaryFrx';
+    } else if (['.bas', '.cls', '.frm'].includes(ext)) {
+      this.contextValue = 'importableFile'; // インポート可能なファイル
+    } else {
+    this.contextValue = 'unknownFile'; // その他のファイル
+
+}
 
   }
 }
@@ -222,7 +235,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('excel-vba-sync.exportVBA', async (fp?: string) => {
-      // フォルダの取得
+      // Confirm export folder
       const folder = (typeof fp === 'string' ? fp : context.globalState.get<string>('vbaExportFolder'));
       if (!folder || typeof folder !== 'string') {
         //vscode.window.showErrorMessage(t('extension.error.exportFolderNotConfigured'));
@@ -234,7 +247,7 @@ export function activate(context: vscode.ExtensionContext) {
         return vscode.window.showErrorMessage(t('extension.error.exportFolderNotConfigured'));
       }*/
 
-      // スクリプトのパス
+      // Get script path
       const script = path.join(context.extensionPath, 'scripts', 'export_opened_vba.ps1');
       //const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${script}" "${folder}"`;
       const cmd = `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass `
@@ -262,7 +275,7 @@ export function activate(context: vscode.ExtensionContext) {
 
           //console.log(exitCode);
           const timestamp = getTimestamp();
-          // PowerShellからのexit codeに応じてエラー処理
+          // Powershell exit code handling
           switch (exitCode) {
             case 1:
               //vscode.window.showErrorMessage(t('common.error.noPath'));
