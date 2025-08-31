@@ -28,6 +28,8 @@ param (
     [string]$InputFile  #オプション（単一ファイル/フォルダ）
 )
 
+write-host "----------------------------------------"
+write-host "Input File: $InputFile"
 # ロケール取得
 $locale = (Get-UICulture).Name.Split('-')[0]
 $defaultLocale = "en"
@@ -90,7 +92,7 @@ function Import-ModuleToVBProject {
         #Write-Host ($messages."import.warn.moduleNotFound" -f $modName, $vbproject.FileName)
         $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.warn.moduleNotFound" -f $modName, $vbproject.FileName)
         Write-host $msg
-        return
+        return $false
     }
     else {
         #Write-Host "■ モジュール：$modName を Excel ブック $($vbproject.FileName) へインポートします"
@@ -118,7 +120,7 @@ function Import-ModuleToVBProject {
             #Write-Host ($messages."import.info.moduleOverwriteComplete" -f $modName)
             $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.moduleOverwriteComplete" -f $modName)
             Write-host $msg
-            return
+            return $true
         } else {
             $vbproject.VBComponents.Remove($targetComp)
             #Write-Host "■ $modName を削除して再追加します"
@@ -336,6 +338,7 @@ else{
 $anySuccess = $false
 $i = 1
 
+write-host "----------------------------------------"
 foreach ($wb in $workbooks) {
     $vbproject = $wb.VBProject
     if ($vbproject.Protection -ne 0) {
@@ -409,8 +412,11 @@ foreach ($wb in $workbooks) {
           if ($result) {
             $anySuccess = $true
           }
+          continue
         }
     }
+
+    write-host "----------------------------------------"
 
     # 自動保存を復元
     if ($originalAutoSave.ContainsKey($wb.Name)) {
@@ -425,10 +431,11 @@ if (-not $anySuccess) {
     #Write-Host ($messages."import.error.importFailedOrNoTarget")
     $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.error.importFailedOrNoTarget")
     Write-host $msg
+    write-host "----------------------------------------"
     exit 5
 }
-
 #Write-Host ($messages."commoninfo.importCompleted")
-$msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."commoninfo.importCompleted")
+$msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."common.info.importCompleted")
 Write-host $msg
+write-host "----------------------------------------"
 exit 0

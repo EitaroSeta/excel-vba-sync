@@ -25,9 +25,14 @@
 #>
 
 param (
-    [string]$OutputDir
+    [string]$OutputDir,
+    [string]$BookName,
+    [string]$ModuleName
 )
-
+write-host "----------------------------------------"
+write-host "Output Directory: $OutputDir"
+write-host "Book Name: $BookName"
+write-host "Module Name: $ModuleName"
 # ロケール取得
 $locale = (Get-UICulture).Name.Split('-')[0]
 $defaultLocale = "en"
@@ -146,135 +151,196 @@ foreach ($wb in $workbooks) {
 }
 
 # 各ワークブックからモジュールをエクスポート
-foreach ($wb in $workbooks) {
-    $project = $wb.VBProject
-    $bookName = [System.IO.Path]::GetFileNameWithoutExtension($wb.Name)
-    $bookDir = Join-Path $OutputDir $bookName
-    if (-not (Test-Path $bookDir)) {
-        New-Item -ItemType Directory -Path $bookDir | Out-Null
-    }
+function ExportModule {
+    param (
+        [string]$OutputDir,
+        [string]$BookName,
+        [string]$ModuleName,
+        [object]$workbooks
+    )
+    
+    $success = $false # 全体の成功状態を管理
 
-    if ($project.Protection -ne 0) {
-        #Write-Host ($messages."export.warn.protectedVBProject" -f $wb.Name)
-        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.protectedVBProject' -f $wb.Name
-        Write-host $msg
-        continue
-    }
+    foreach ($wb in $workbooks) {
+        $project = $wb.VBProject
+        $currentBookName = [System.IO.Path]::GetFileNameWithoutExtension($wb.Name)
 
-    foreach ($component in $project.VBComponents) {
-        $name = $component.Name
-        switch ($component.Type) {
-            1 { $ext = ".bas" }   # 標準モジュール
-            2 { $ext = ".cls" }   # クラスモジュール
-            3 { $ext = ".frm" }   # ユーザーフォーム
-            100 { $ext = ".bas" } # ThisWorkbook / Sheet モジュール
-            default { $ext = ".txt" }
-        }
-
-        $filename = Join-Path $bookDir "$name$ext"
-
-        # Type=100（ThisWorkbookやSheet）は .Export() 不安定な為、Linesで処理してcontinue
-        if ($component.Type -eq 100) {
-            try {
-                $codeModule = $component.CodeModule
-                $lineCount = $codeModule.CountOfLines
-                if ($lineCount -gt 0) {
-                    $codeText = $codeModule.Lines(1, $lineCount)
-                    Set-Content -Path $filename -Value $codeText -Encoding UTF8
-                    #Write-Host ($messages."export.info.exportFallbackSuccess100" -f $filename)
-                    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportFallbackSuccess100' -f $filename
-                    Write-host $msg
-                } else {
-                    #Write-Host ($messages."export.warn.exportEmptyCode" -f $name)
-                    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.exportEmptyCode' -f $name
-                    Write-host $msg
-                }
-            } catch {
-                #Write-Host ($messages."export.error.exportFailed100" -f $filename ,$_)
-                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFailed100' -f $filename ,$_
-                Write-host $msg
-            }
+        # ブック名が指定されている場合、対象のブックを絞り込む
+        if ($BookName -and $currentBookName -ne $BookName) {
             continue
         }
 
-        # コード有無チェック
-        try {
-            $codeModule = $component.CodeModule
-            $lineCount = $codeModule.CountOfLines
-            if ($lineCount -eq 0) {
-                #Write-Host ($messages."export.warn.exportEmptyModule" -f $name)
-                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.exportEmptyModule' -f $name
-                Write-host $msg
-                continue
-            }
-            $codeText = $codeModule.Lines(1, $lineCount)
-            if ($codeText -notmatch '\b(Sub|Function|Property)\b') {
-                #Write-Host ($messages."export.warn.noCodeToExport" -f $name)
-                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.noCodeToExport' -f $name
-                Write-host $msg
-                continue
-            }
-        } catch {
-            #Write-Host ($messages."export.error.codeFetchFailed" -f $name, $_)
-            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.codeFetchFailed' -f $name, $_
+        $bookDir = Join-Path $OutputDir $currentBookName
+        if (-not (Test-Path $bookDir)) {
+            New-Item -ItemType Directory -Path $bookDir | Out-Null
+        }
+
+        if ($project.Protection -ne 0) {
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.protectedVBProject' -f $wb.Name
             Write-host $msg
             continue
         }
 
-        # .Export() 試行（最大3回）
-        $success = $false
-        for ($i = 1; $i -le 3; $i++) {
-            try {
-                $component.Activate() | Out-Null
-                $component.CodeModule.CodePane.Show()
-                Start-Sleep -Milliseconds 300
-      
-                $component.Export($filename)
-                $success = $true
+        $moduleProcessed = $false  # モジュールが処理されたかを管理するフラグ
 
-                # ★ 不要な Attribute 行を削除
-                #$filtered = Get-Content $filename | Where-Object { $_ -notmatch '^Attribute VB_' }
-                #Set-Content -Encoding UTF8 $filename -Value $filtered
-
-                break
-            } catch {
-                Start-Sleep -Milliseconds 200
-                #Write-Host ($messages."export.error.exportFailedModule" -f $i, $filename, $_)
-                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFailedModule' -f $i, $filename, $_
-                Write-host $msg
-            }
-        }
-
-        if ($success) {
-            #Write-Host ($messages."export.info.exportSuccess" -f $filename)
-            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportSuccess' -f $filename
-            Write-host $msg
-            continue
-        }
-
-        # フォールバック: .Lines() による手動保存
-        try {
-            $codeModule = $component.CodeModule
-            $lineCount = $codeModule.CountOfLines
-            if ($lineCount -eq 0) {
-                #Write-Host ($messages."export.warn.exportEmptyModule" -f $name)
-                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.exportEmptyModule' -f $name
-                Write-host $msg
+        foreach ($component in $project.VBComponents) {
+            $name = $component.Name
+            # モジュール名が指定されている場合、対象のモジュールを絞り込む
+            if ($ModuleName -and $name -ne $ModuleName) {
                 continue
             }
-            $codeText = $codeModule.Lines(1, $lineCount)
-            Set-Content -Path $filename -Value $codeText -Encoding UTF8
-            #Write-Host ($messages."export.info.exportFallbackSuccess" -f $filename)
-            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportFallbackSuccess' -f $filename
-            Write-host $msg
 
-        } catch {
-            #Write-Host ($messages."export.error.exportFinalFailed" -f $filename)
-            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFinalFailed' -f $filename
-            Write-host $msg
+            # モジュールが処理される場合にフラグを更新
+            $moduleProcessed = $true
+
+            switch ($component.Type) {
+                1 { $ext = ".bas" }   # 標準モジュール
+                2 { $ext = ".cls" }   # クラスモジュール
+                3 { $ext = ".frm" }   # ユーザーフォーム
+                100 { $ext = ".bas" } # ThisWorkbook / Sheet モジュール
+                default { $ext = ".txt" }
+            }
+
+            $filename = Join-Path $bookDir "$name$ext"
+
+            # エクスポート処理
+            #ExportComponent $component $filename
+            $componentSuccess = ExportComponent -component $component -filename $filename
+            if ($componentSuccess) {
+              $success = $true  # 1件でも成功があれば全体を成功とする
+            } else {
+              $success = $false  # 失敗した場合は全体を失敗とする
+              $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFailedModule' 
+              Write-Host $msg
+              write-host "aaa"
+            }
+
         }
+        # すべてのモジュールがスキップされた場合の処理
+        if (-not $moduleProcessed) {
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.noModulesProcessed'
+            Write-Host $msg
+            $success = $false
+        }
+
     }
+    return $success
 }
+
+function ExportComponent {
+    param (
+        [object]$component,
+        [string]$filename
+    )
+    $success = $false
+
+    # Type=100（ThisWorkbookやSheet）は .Export() 不安定な為、Linesで処理してcontinue
+    if ($component.Type -eq 100) {
+        try {
+            $codeModule = $component.CodeModule
+            $lineCount = $codeModule.CountOfLines
+            if ($lineCount -gt 0) {
+                $codeText = $codeModule.Lines(1, $lineCount)
+                Set-Content -Path $filename -Value $codeText -Encoding UTF8
+                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportFallbackSuccess100' -f $filename
+                Write-host $msg
+                $success = $true
+            } else {
+                $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.exportEmptyCode' -f $component.Name
+                $success = $false
+                Write-host $msg
+            }
+        } catch {
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFailed100' -f $filename, $_
+            $success = $false
+            Write-host $msg
+        }
+        return $success
+    }
+
+    # コード有無チェック
+    try {
+        $codeModule = $component.CodeModule
+        $lineCount = $codeModule.CountOfLines
+        if ($lineCount -eq 0) {
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.exportEmptyModule' -f $component.Name
+            Write-host $msg
+            $success = $false
+            return $success
+        }
+        $codeText = $codeModule.Lines(1, $lineCount)
+        if ($codeText -notmatch '\b(Sub|Function|Property)\b') {
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.noCodeToExport' -f $component.Name
+            Write-host $msg
+            $success = $false
+            return $success
+        }
+    } catch {
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.codeFetchFailed' -f $component.Name, $_
+        Write-host $msg
+        $success = $false
+        return $success 
+    }
+
+    # .Export() 試行（最大3回）
+    $success = $false
+    for ($i = 1; $i -le 3; $i++) {
+
+        try {
+            $component.Activate() | Out-Null
+            $component.CodeModule.CodePane.Show()
+            Start-Sleep -Milliseconds 300
+
+            $component.Export($filename)
+            $success = $true
+
+            # ★ 不要な Attribute 行を削除
+            #$filtered = Get-Content $filename | Where-Object { $_ -notmatch '^Attribute VB_' }
+            #Set-Content -Encoding UTF8 $filename -Value $filtered
+
+            break
+        } catch {
+            Start-Sleep -Milliseconds 200
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFailedModule' -f $i, $filename, $_
+            $success = $false
+            Write-host $msg
+        }
+    }
+
+    if ($success) {
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportSuccess' -f $filename
+        Write-host $msg
+        return $success
+    }
+
+    # フォールバック: .Lines() による手動保存
+    try {
+        $codeModule = $component.CodeModule
+        $lineCount = $codeModule.CountOfLines
+        if ($lineCount -eq 0) {
+            $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.exportEmptyModule' -f $component.Name
+            Write-host $msg
+            $success = $false
+            return $success
+        }
+        $codeText = $codeModule.Lines(1, $lineCount)
+        Set-Content -Path $filename -Value $codeText -Encoding UTF8
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportFallbackSuccess' -f $filename
+        Write-host $msg
+        $success = $true
+        return $success
+    } catch {
+        $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFinalFailed' -f $filename
+        Write-host $msg
+    }
+    return $success
+}
+
+write-host "----------------------------------------"
+
+# 各ワークブックからモジュールをエクスポート
+$anysuccess = ExportModule -OutputDir $OutputDir -BookName $BookName -ModuleName $ModuleName -workbooks $workbooks
+write-host "----------------------------------------"
 
 # 自動保存の設定を元に戻す
 foreach ($wb in $workbooks) {
@@ -297,10 +363,18 @@ foreach ($wb in $workbooks) {
             Write-host $msg
         }
     }
+    
 }
 
+if (-not $anySuccess) {
+    #Write-Host ($messages."import.error.exportFinalFailed")
+    $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."export.error.exportFinalFailed")
+    Write-host $msg
+    write-host "----------------------------------------"
+    exit 6
+}
 #Write-Host ($messages."export.info.exportModuleComplete" -f $OutputDir)
 $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.info.exportModuleComplete' -f $OutputDir
 Write-Host  $msg
-
+write-host "----------------------------------------"
 exit 0

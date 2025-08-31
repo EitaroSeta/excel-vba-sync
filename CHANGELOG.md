@@ -9,6 +9,17 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.22] - 2025-08-31
+### ### Fixed
+- Fixed issue where INFO logs were output even on errors.
+
+### ### Changed
+- Fine-tuned message text.
+- Minor changelog output"
+
+### ### Added
+- Enabled exporting files via right-click.
+
 ## [0.0.21] - 2025-08-30
 ### ### Fixed
 - Fixed import issue from statusbar.

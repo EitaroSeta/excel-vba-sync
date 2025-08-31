@@ -233,6 +233,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   const timestamp = getTimestamp();
 
+  // Export VBA
   context.subscriptions.push(
     vscode.commands.registerCommand('excel-vba-sync.exportVBA', async (fp?: string) => {
       // Confirm export folder
@@ -253,13 +254,14 @@ export function activate(context: vscode.ExtensionContext) {
       const cmd = `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass `
         + `-Command "& { `
         + `$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); `
-        + `& '${script}' '${folder}' *>&1 `
+        + `& '${script}' '${folder}' ;exit $LASTEXITCODE; `
         + `}"`;
 
       await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: t('extension.info.exporting'), cancellable: false
       }, () => new Promise<void>(resolve => {
+        outputChannel.appendLine(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
         outputChannel.appendLine(`[${timestamp}] ${t('extension.info.exporting')}`);
         outputChannel.show();
         cp.exec(cmd, { encoding: 'buffer' }, (err, stdout, stderr) => {
@@ -304,6 +306,12 @@ export function activate(context: vscode.ExtensionContext) {
               outputChannel.show();
               treeProvider.refresh();
               break;
+            case 6:
+              //vscode.window.showErrorMessage(t('common.error.invalidFolder'));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.error.exportFailedFinal')}`);
+              outputChannel.show();
+              treeProvider.refresh();
+              break;
             case 0:
               //vscode.window.showInformationMessage(t('common.info.exportCompleted'));
               outputChannel.appendLine(`[${timestamp}] ${t('common.info.exportCompleted')}`);
@@ -329,7 +337,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-
+  // Import VBA
   context.subscriptions.push(
     vscode.commands.registerCommand('excel-vba-sync.importVBA', async (item: FileTreeItem) => {
       let filePath: string;
@@ -388,9 +396,10 @@ export function activate(context: vscode.ExtensionContext) {
       const cmd = `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass `
         + `-Command "& { `
         + `$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); `
-        + `& '${script}' '${filePath}' *>&1 `
+        + `& '${script}' '${filePath}' ;exit $LASTEXITCODE;`
         + `}"`;
       //vscode.window.showInformationMessage(t('extension.info.targetFolderFiles', { 0: filePath }));
+      outputChannel.appendLine(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
       outputChannel.appendLine(`[${timestamp}] ${t('extension.info.targetFolderFiles', { 0: filePath })}`);
       outputChannel.show();
 
@@ -469,6 +478,7 @@ export function activate(context: vscode.ExtensionContext) {
       }));
     })
   );
+
   context.subscriptions.push(outputChannel); // 拡張機能終了時にチャネルを破棄
   context.subscriptions.push(
     vscode.commands.registerCommand('excel-vba-sync.setExportFolder', async () => {
@@ -483,6 +493,114 @@ export function activate(context: vscode.ExtensionContext) {
       outputChannel.show();
       treeProvider['folderPath'] = selected;
       treeProvider.refresh();
+    })
+  );
+
+  // exportModuleByName
+  context.subscriptions.push(
+    vscode.commands.registerCommand('excel-vba-sync.exportModuleByName', async (item: FileTreeItem) => {
+      const timestamp = getTimestamp();
+
+      if (!item || !(item.uri instanceof vscode.Uri)) {
+        outputChannel.appendLine(`[${timestamp}] ${t('extension.error.noFileSelected')}`);
+        outputChannel.show();
+        return;
+      }
+
+      const fileName = path.basename(item.uri.fsPath, path.extname(item.uri.fsPath)); // ファイル名（拡張子なし）
+      const exportFolder = context.globalState.get<string>('vbaExportFolder');
+
+      if (!exportFolder) {
+        outputChannel.appendLine(`[${timestamp}] ${t('extension.error.exportFolderNotConfigured')}`);
+        outputChannel.show();
+        return;
+      }
+
+      const bookName = path.basename(path.dirname(item.uri.fsPath)); // フォルダ名（ブック名）
+      const moduleName = path.basename(item.uri.fsPath, path.extname(item.uri.fsPath)); // モジュール名（拡張子なし）
+      const script = path.join(context.extensionPath, 'scripts', 'export_opened_vba.ps1');
+      const cmd = `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass `
+        + `-Command "& { `
+        + `$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); `
+        + `& '${script}' '${exportFolder}' '${bookName}' '${moduleName}' ;exit $LASTEXITCODE; `
+        + `}"`;
+
+      outputChannel.appendLine(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+      outputChannel.appendLine(`[${timestamp}] ${t('extension.info.exportingModule', { 0: fileName })}`);
+      outputChannel.show();
+
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: t('extension.info.exporting'),
+        cancellable: false
+      }, () => new Promise<void>((resolve) => {
+        cp.exec(cmd, { encoding: 'buffer' }, (err, stdout, stderr) => {
+          const out = iconv.decode(stdout as Buffer, 'utf-8').trim();
+          const errStr = iconv.decode(stderr as Buffer, 'utf-8').trim();
+          outputChannel.append(out.endsWith('\n') ? out : out + '\n');
+          if (errStr && errStr.trim().length > 0) {
+            outputChannel.appendLine(`[${getTimestamp()}] STDERR: ${errStr.trim()}`);
+          }
+          const exitCode = err?.code;
+          //outputChannel.appendLine(`[${getTimestamp()}] Exit Code: ${exitCode}`);
+
+          // PowerShellからのexit codeに応じてエラー処理
+          switch (exitCode) {
+            case 1:
+              //vscode.window.showErrorMessage(t('common.error.noPath'));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.error.noPath')}`);
+              outputChannel.show();
+              treeProvider.refresh();
+              break;
+            case 2:
+              //vscode.window.showErrorMessage(t('common.error.oneDriveFolder'));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.error.oneDriveFolder')}`);
+              outputChannel.show();
+              break;
+            case 3:
+              //vscode.window.showErrorMessage(t('common.error.noExcel'));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.error.noExcel')}`);
+              outputChannel.show();
+              break;
+            case 4:
+              //vscode.window.showErrorMessage(t('common.error.noSavedWorkbook'));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.error.noSavedWorkbook')}`);
+              outputChannel.show();
+              break;
+            case 5:
+              //vscode.window.showErrorMessage(t('common.error.invalidFolder'));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.error.invalidFolder')}`);
+              outputChannel.show();
+              treeProvider.refresh();
+              break;
+            case 6:
+              //vscode.window.showErrorMessage(t('common.error.invalidFolder'));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.error.exportFailedFinal')}`);
+              outputChannel.show();
+              treeProvider.refresh();
+              break;
+            case 0:
+              //vscode.window.showInformationMessage(t('common.info.exportCompleted'));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.info.exportCompleted')}`);
+              outputChannel.show();
+              treeProvider.refresh();
+              break;
+            case undefined:
+              //vscode.window.showInformationMessage(t('common.info.exportCompleted'));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.info.exportCompleted')}`);
+              outputChannel.show(); 
+              treeProvider.refresh();
+              break;
+            default:
+              //vscode.window.showErrorMessage(t('common.error.exportFailed', { 0: exitCode.toString(), 1: errStr }));
+              outputChannel.appendLine(`[${timestamp}] ${t('common.error.exportFailed', { 0: exitCode.toString(), 1: errStr })}`);
+              outputChannel.show();
+              treeProvider.refresh();
+              break;
+          }
+          resolve();
+        });
+      }));
     })
   );
 
