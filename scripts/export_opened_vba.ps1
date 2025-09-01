@@ -294,7 +294,8 @@ function ExportComponent {
 
             # š •s—v‚È Attribute s‚ğíœ
             #$filtered = Get-Content $filename | Where-Object { $_ -notmatch '^Attribute VB_' }
-            #Set-Content -Encoding UTF8 $filename -Value $filtered
+            $filtered = Get-Content $filename
+            Set-Content -Path $filename -Value $filtered -Encoding UTF8
 
             break
         } catch {
