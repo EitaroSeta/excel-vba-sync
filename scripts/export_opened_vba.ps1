@@ -120,7 +120,7 @@ for ($i = 1; $i -le $excel.Workbooks.Count; $i++) {
         if ($ext -eq ".xlsm" -or $ext -eq ".xlsb") {
           $workbooks += $wb
         } else {
-            # マクロファイル以外はスキップ
+            # Skip non-macro files
             $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.nonMacroFileSkipped' -f $wb.Name
             Write-host $msg
         }
@@ -203,24 +203,22 @@ function ExportModule {
 
             $filename = Join-Path $bookDir "$name$ext"
 
-            # エクスポート処理
-            #ExportComponent $component $filename
+            # export 
             $componentSuccess = ExportComponent -component $component -filename $filename
             if ($componentSuccess) {
               $success = $true  # 1件でも成功があれば全体を成功とする
-            } else {
-              $success = $false  # 失敗した場合は全体を失敗とする
-              $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFailedModule' 
-              Write-Host $msg
-              write-host "aaa"
-            }
+            } #else {
+              #$success = $false  # 失敗した場合は全体を失敗とする
+              #$msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.error.exportFailedModule' 
+              #Write-Host $msg
+            #}
 
         }
         # すべてのモジュールがスキップされた場合の処理
         if (-not $moduleProcessed) {
             $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'export.warn.noModulesProcessed'
             Write-Host $msg
-            $success = $false
+            #$success = $false
         }
 
     }
