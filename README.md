@@ -62,7 +62,7 @@ Works in a Windows 10/11 + Excel + VS Code environment only.
 code --install-extension 9kv8xiyi.excel-vba-sync
 ```
 
-### From github(VSCode)
+### From Github(VSCode)
 1. https://github.com/EitaroSeta/excel-vba-sync/releases/download/latest/extension.vsix より`extension.vsix`をダウンロード
 2. VS Code を開く
 3. 拡張機能ビュー（Ctrl+Shift+X / Cmd+Shift+X）を開く
@@ -70,7 +70,7 @@ code --install-extension 9kv8xiyi.excel-vba-sync
 5. ダウンロードした`extension.vsix` ファイルを選択
 6. Reloadを実行
 
-### From github(Powershell)
+### From Github(Powershell)
 以下コマンドを実行
 ```powershell
 $URL = "https://github.com/EitaroSeta/excel-vba-sync/releases/download/latest/extension.vsix"
@@ -81,23 +81,41 @@ code --install-extension "$OUT"
 
 ## ⚠重要 / Important ##
 
-**エクスポートしたファイルの属性は編集しないでください**
-> エクスポートした **`.frm/.cls/.bas`** の **属性行は編集しないでください**。`VERSION`、`Begin … End`、`Object = …`、および `Attribute VB_*`（例：`VB_Name` / `VB_PredeclaredId` / `VB_Exposed` / `VB_Creatable` など）を変更すると、**再インポート失敗**・**既存フォームとの紐付け崩れ**が発生します。  
+**●エクスポートしたファイルの属性は編集しないでください**
+> エクスポートした **`.frm/.cls/.bas`** の **属性行は編集しないでください**。`VERSION`、`Begin … End`、`Object = …`、および `Attribute VB_*`（例：`VB_Name` / `VB_PredeclaredId` / `VB_Exposed` / `VB_Creatable` など）を変更すると、**インポート失敗**や**既存フォームとの紐付け崩れ**が発生します。  
 
-**モジュールの新規追加はできません**
+**●モジュールの新規追加はできません**
 >既存のモジュール/クラス/フォームを入替えを行う仕組みの為、新規の追加はできません。 VBA上で新規モジュールを追加し、エクスポートしてください。
 
-**EXCELファイルは必ずバックアップしてください**
+**●EXCELファイルは必ずバックアップしてください**
 >この拡張機能はEXCELファイルを外部から操作する仕組みなので、条件によりEXCELファイルを破損させる恐れがあります。EXCELファイルのバックアップを必ず取ってから連携させて下さい。
 
-**Do **not** edit attributes of exported files**
-> Do **not edit the attribute lines** in exported **`.frm/.cls/.bas`** files. Changing `VERSION`, `Begin … End`, `Object = …`, or any `Attribute VB_*` (e.g., `VB_Name`, `VB_PredeclaredId`, `VB_Exposed`, `VB_Creatable`) can cause **re-import failures**,  and **loss of linkage** to the original form.  
+**●COMエラーについて**
+>Excel に長時間触れずに放置した後や、画面ロック復帰直後などにインポート／エクスポートを実行すると、
+次のようなエラーが発生する場合があります。  
 
-**New modules, classes, or forms cannot be added;**
+`STDERR: Call was rejected by callee. (HRESULT からの例外:0x80010001 (RPC_E_CALL_REJECTED))`  
+
+>これは Excel 側が一時的に応答できない状態にあるため、COM 呼び出しが失敗して発生するエラーです。  
+この場合は **Excelを再起動**すると解消されます。
+
+**●Do **not** edit attributes of exported files**
+> Do **not edit the attribute lines** in exported **`.frm/.cls/.bas`** files. Changing `VERSION`, `Begin … End`, `Object = …`, or any `Attribute VB_*` (e.g., `VB_Name`, `VB_PredeclaredId`, `VB_Exposed`, `VB_Creatable`) can cause **import failures**,  and **loss of linkage** to the original form.  
+
+**●New modules, classes, or forms cannot be added;**
 >New modules, classes, or forms cannot be added; this tool only replaces existing ones.If you need to create a new item, first add a blank module/class/form in the VBE, then export it.
 
-**Please back up your EXCEL files**
+**●Please back up your EXCEL files**
 >This extension operates externally on EXCEL files, so depending on the conditions, there is a risk of corrupting the file. Please make sure to always back up your EXCEL files before linking them with this extension.
+
+**●About COM Error**
+>When running import/export operations after leaving Excel idle for a long time or resuming from a screen lock,
+you may encounter the following error:  
+
+`STDERR: Call was rejected by callee. (HRESULT 0x80010001)`  
+
+>This occurs because Excel is temporarily unable to respond, causing the COM call to fail.  
+**Restarting Excel** will resolve the issue.
 
 ---
 
