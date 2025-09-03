@@ -66,5 +66,6 @@
   "import.info.importDirChecked": "【INFO】✅Powershell: Checked import directory [{1}] (workbook #{0}).",
   "import.info.targetFiles": "【INFO】✅Powershell: Import target files [{1}] (workbook #{0}).",
   "import.info.existingModules": "【INFO】✅Powershell: Existing modules [{1}] (workbook #{0}).",
-  "import.error.importFailedOrNoTarget": "`n【ERROR】❌Powershell: Failed to import modules or no targets found."
+  "import.error.importFailedOrNoTarget": "`n【ERROR】❌Powershell: Failed to import modules or no targets found.",
+  "import.info.importCompleted": "【INFO】✅Powershell: Import completed."
 }

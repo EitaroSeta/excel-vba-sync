@@ -435,7 +435,7 @@ if (-not $anySuccess) {
     exit 5
 }
 #Write-Host ($messages."commoninfo.importCompleted")
-$msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."common.info.importCompleted")
+$msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.importCompleted")
 Write-host $msg
 write-host "----------------------------------------"
 exit 0

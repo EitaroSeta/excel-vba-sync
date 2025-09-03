@@ -9,6 +9,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.26] - 2025-09-03
+### ### Changed
+- Fine-tuned message text.
+
 ## [0.0.25] - 2025-09-02
 ### ### Changed
 - Added emoji to log prefix.
