@@ -28,6 +28,8 @@ param (
     [string]$InputFile  #オプション（単一ファイル/フォルダ）
 )
 
+$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
 write-host "----------------------------------------"
 write-host "Input File: $InputFile"
 # ロケール取得
@@ -42,8 +44,6 @@ if (-Not (Test-Path $localePath)) {
 
 $messages = Get-Content $localePath -Encoding UTF8 -Raw | ConvertFrom-Json
 
-#[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $InformationPreference = 'Continue'
 function Get-Timestamp {
     Get-Date -Format 'yyyy-MM-dd HH:mm:ss'  # → [YYYY-MM-DD HH:mm:ss]

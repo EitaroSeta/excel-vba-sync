@@ -67,5 +67,18 @@
   "import.info.targetFiles": "【INFO】✅Powershell: {0} ブック目 インポート対象ファイル [{1}]",
   "import.info.existingModules": "【INFO】✅Powershell: {0} ブック目 モジュール一覧 [{1}]",
   "import.error.importFailedOrNoTarget": "【ERROR】❌Powershell: モジュールのインポートに失敗、または対象がありません。",
-  "import.info.importCompleted": "【INFO】✅Powershell: インポートが終了しました。"
+  "import.info.importCompleted": "【INFO】✅Powershell: インポートが終了しました。",
+  "extension.error.invalidResponse": "【ERROR】❌コード取得に失敗（レスポンス不正）",
+  "extension.warning.unexportedModule": "【WARN】⚠️未エクスポートのモジュールです。",
+  "extension.error.serverJsNotFound": "【ERROR】❌server.js が見つかりません: {path}",
+  "extension.error.ps1NotFound": "【ERROR】❌.ps1 が見つかりません: {path}（.vscodeignoreで除外していないか確認）",
+  "extension.prompt.searchQuery": "検索語（正規表現は /.../ 形式可）",
+  "extension.placeholder.searchQuery": "検索ワードを入力（例: MsgBox または  /M*Box/）",
+  "extension.prompt.moduleName": "指定モジュールのPublic Sub 一覧の表示・実行ができます。",
+  "extension.placeholder.moduleName": "例: Module1",
+  "extension.progress.fetchingMacroList": "Excel マクロ一覧を取得中…",
+  "extension.error.macroListParsingFailed": "マクロ一覧の解析に失敗しました。Output: VBA Tools を確認してください。",
+  "extension.warning.publicSubNotFound": "Public Sub が見つかりませんでした。",
+  "extension.placeholder.selectMacroToRun": "実行するマクロを選択",
+  "extension.statusBarMessage.temporaryDisplay": "テンポラリ表示（保存するにはエクスポート先に保存してください）"  
 }

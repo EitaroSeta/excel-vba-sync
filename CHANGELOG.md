@@ -9,6 +9,24 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.27] - 2025-09-13
+### ### Added
+- Excel Macro Execution.  
+Added ability to execute VBA macros by fully qualified name or by specifying module/procedure names.  
+- VBA Code Search (vba_search_code)  
+New tool to search across all open Excel workbooks and their VBA modules.  
+Supports both plain text and regex search (useRegex).
+
+### ### Improved
+- VS Code Extension Integration  
+Implemented JSON-RPC communication between the extension and the server.  
+Allows temporary display of fetched VBA code with automatic navigation to the matched line.  
+If exported .bas, .cls, or .frm files already exist, they are prioritized for opening instead of fetching directly from Excel.  
+- Error Handling & Stability  
+Added clear JSON-formatted error messages when Excel is not running, or when workbooks/modules are not found.  
+Introduced execution timeout (20s) and buffer size limits (2 MB) for more robust process control.
+Improved JSON parsing safety for server responses.
+
 ## [0.0.26] - 2025-09-03
 ### ### Changed
 - Fine-tuned message text.

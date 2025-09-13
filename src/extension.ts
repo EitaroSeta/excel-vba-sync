@@ -31,10 +31,21 @@ import * as cp from 'child_process';
 import * as iconv from 'iconv-lite';
 import { readdir } from 'fs/promises';
 import * as fs from 'fs';
-import { spawn } from 'child_process';
+import * as os from "os";
+import { spawn, ChildProcessWithoutNullStreams } from "child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const execFileAsync = promisify(execFile);
 
 let messages: Record<string, string> = {};
 const outputChannel = vscode.window.createOutputChannel("Excel VBA Sync Messages");
+let extCtx: vscode.ExtensionContext | undefined;
+
+// MCP server settings
+let mcpProc: ChildProcessWithoutNullStreams | null = null;
+let channel: vscode.OutputChannel;
+let reqId = 0;
+const pending = new Map<number, { resolve: (v:any)=>void; reject:(e:any)=>void }>();
 
 // Load localized messages
 function loadMessages(context: vscode.ExtensionContext) {
@@ -87,6 +98,488 @@ function watchFolder(folderPath: string, treeProvider: SimpleTreeProvider) {
   });
 }
 
+// Search result hit type
+type VbaHit = {
+  workbook?: string;
+  module?: string | { name?: string };
+  proc?: string | null;
+  line?: number;
+  startLine?: number;
+  matchLine?: number;
+  snippet?: string;
+  qualified?: string | null;
+  compType?: number;        // 1: bas / 3: frm / その他: cls
+  exportExt?: string;       // "bas" | "cls" | "frm"
+};
+
+// module field to string
+function toModuleName(m: VbaHit["module"]): string {
+  if (typeof m === "string") {return m;}
+  if (m && typeof m === "object" && typeof (m as any).name === "string") {return (m as any).name;}
+  return String(m ?? "");
+}
+
+// extension from compType or exportExt
+function inferExt(hit: VbaHit): string {
+  if (hit.exportExt) {return String(hit.exportExt);}
+  switch (hit.compType) { case 1: return "bas"; case 3: return "frm"; default: return "cls"; }
+}
+
+// sanitize for directory name
+function safeName(s: string): string {
+  return s.replace(/[\\/:*?"<>|]/g, "_").trim();
+}
+
+// generate candidate directory names for a workbook
+// ex: "Book1.xlsm" -> ["Book1.xlsm", "Book1"]
+function workbookDirCandidates(workbook: string): string[] {
+  const withExt = safeName(workbook);
+  const noExt = safeName(path.basename(workbook, path.extname(workbook)));
+  // 重複除去
+  return [...new Set([withExt, noExt])];
+}
+
+// infer export root folder
+function resolveExportRoot(): string {
+  // 1) globalState（activateで保持した extCtx を使う）
+  const globalVal = extCtx?.globalState.get<string>("vbaExportFolder");
+  let base = globalVal && globalVal.trim().length ? globalVal : "";
+  console.log(`resolveExportRoot: from globalState: ${base}`);
+  // 2) 設定
+  if (!base) {
+    const cfg = vscode.workspace.getConfiguration("excelVbaSync");
+    base = cfg.get<string>("vbaExportFolder") ?? "";
+  }
+
+  // 3) デフォルト
+  if (!base) {
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    base = ws ? path.join(ws, "vbaExport") : path.join(os.homedir(), "Excel-VBA-Sync", "vba");
+  }
+
+  // ~ と ${workspaceFolder} 展開
+  if (base.startsWith("~")) { base = path.join(os.homedir(), base.slice(1)); }
+  const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (ws) { base = base.replace(/\$\{workspaceFolder\}/g, ws); }
+
+  return base;
+}
+
+// exported file search
+/// 既存ファイルの探索：<root>/<Workbook候補>/<Module>.<ext> を優先
+function findExportedFile(root: string, workbook: string, moduleName: string, ext: string): string | null {
+  const wbDirs = workbookDirCandidates(workbook);
+
+  const candidates: string[] = [];
+  for (const dir of wbDirs) {
+    candidates.push(
+      path.join(root, dir, `${moduleName}.${ext}`),            // vba/Book1/Module1.bas  または vba/Book1.xlsm/Module1.bas
+      path.join(root, dir, ext, `${moduleName}.${ext}`),       // vba/Book1/bas/Module1.bas など（サブフォルダ運用している場合）
+      path.join(root, dir, moduleName, `${moduleName}.${ext}`) // vba/Book1/Module1/Module1.bas（保険）
+    );
+  }
+  // 平置きフォールバック
+  candidates.push(path.join(root, `${moduleName}.${ext}`));
+
+  for (const p of candidates) {
+    try { if (fs.existsSync(p)) {return p;} } catch {}
+  }
+  return null;
+}
+
+// calculate header offset for exported files
+function calcExportHeaderOffset(text: string, ext: string): number {
+  const lines = text.split(/\r\n|\n|\r/);
+  let i = 0;
+
+  // 1) 先頭の VERSION 行
+  while (i < lines.length && /^\s*VERSION\b/i.test(lines[i])) {i++;}
+
+  // 2) .frm のデザイナ領域: Begin ... End ブロックを丸ごと飛ばす（複数あり得る）
+  if (ext.toLowerCase() === "frm") {
+    let idx = i;
+    while (idx < lines.length) {
+      if (/^\s*Begin\b/i.test(lines[idx])) {
+        // 対応する End までスキップ
+        idx++; let depth = 1;
+        while (idx < lines.length && depth > 0) {
+          if (/^\s*Begin\b/i.test(lines[idx])) {depth++;}
+          else if (/^\s*End\b/i.test(lines[idx])) {depth--;}
+          idx++;
+        }
+        i = idx; // 最後の End の次の行
+      } else {break;}
+
+    }
+  }
+
+  // 3) Attribute VB_* 行（連続していることが多い）
+  while (i < lines.length && /^\s*Attribute\b/i.test(lines[i])) {i++;}
+
+  // 4) ここまでが“非表示ヘッダ”。この直後からが CodeModule の先頭とみなす
+  return i;
+}
+
+// get code from Excel and open in editor, then jump to line 
+async function openFromExcelAndJump(hit: VbaHit, moduleName: string) {
+  const res2 = await callTool("excel_get_module_code", {
+    workbook: hit.workbook ?? "",
+    module: moduleName,
+  });
+  const txt = (res2?.content?.[0]?.text ?? "").toString().trim();
+
+  // JSONだけを安全に抽出
+  const start = Math.min(
+    ...['{','['].map(ch => {
+      const i = txt.indexOf(ch);
+      return i === -1 ? Number.POSITIVE_INFINITY : i;
+    })
+  );
+  if (!Number.isFinite(start)) {
+    //vscode.window.showWarningMessage(`コード取得に失敗（レスポンス不正）`);
+    vscode.window.showWarningMessage(t('extension.error.invalidResponse'));
+    return;
+  }
+  const payload = JSON.parse(txt.slice(start));
+  if (!payload?.ok || typeof payload?.code !== "string") {
+    //vscode.window.showWarningMessage(`コード取得に失敗: ${payload?.error ?? "unknown"}`);
+    vscode.window.showWarningMessage(t('extension.error.codeRetrievalFailed', { error: payload?.error ?? "unknown" }));
+    return;
+  }
+
+  const doc = await vscode.workspace.openTextDocument({ language: "vb", content: payload.code });
+  const ed = await vscode.window.showTextDocument(doc, { preview: false });
+  const lineNum = (hit.matchLine ?? hit.startLine ?? hit.line ?? 1);
+  const pos = new vscode.Position(Math.max(0, lineNum - 1), 0);
+  ed.selection = new vscode.Selection(pos, pos);
+  ed.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+  //vscode.window.setStatusBarMessage(`テンポラリ表示（保存するにはエクスポート先に保存してください）`, 5000);
+  vscode.window.setStatusBarMessage(t('extension.statusBarMessage.temporaryDisplay'), 5000);
+}
+
+// jump to existing exported file
+async function openHit(hit: VbaHit) {
+  const moduleName = toModuleName(hit.module);
+  const ext = inferExt(hit);
+
+  const root = resolveExportRoot();   // ← context を渡す
+  //console.log(`openHit: root=${root}, workbook=${hit.workbook}, module=${moduleName}, ext=${ext}`);
+  const existing = (hit.workbook)
+    ? findExportedFile(root, hit.workbook, moduleName, ext)
+    : null;
+
+  if (existing) {
+    const doc = await vscode.workspace.openTextDocument(existing);
+    const ed = await vscode.window.showTextDocument(doc, { preview: false });
+
+    // calculate header offset
+    const offset = calcExportHeaderOffset(doc.getText(), ext);
+    const vbeLine = (hit.matchLine ?? hit.startLine ?? hit.line ?? 1); // ← VBE基準（1始まり）
+    const fileLine = Math.max(1, vbeLine + offset);                    // ← ファイル基準に補正
+
+    const pos = new vscode.Position(fileLine - 1, 0);
+    ed.selection = new vscode.Selection(pos, pos);
+    ed.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+    return;
+  }
+
+  // If not found, show warning
+  //vscode.window.showWarningMessage(`未エクスポートのモジュールです。`);
+  vscode.window.showWarningMessage(t('extension.warning.unexportedModule'));  
+  // If not found, get code from Excel and open in editor
+  //await openFromExcelAndJump(hit, moduleName);
+}
+
+// ensure MCP server is running
+async function ensureServer(context: vscode.ExtensionContext) {
+  if (!mcpProc) {
+    await startServer(context);
+  }
+}
+
+// start MCP server
+async function startServer(context: vscode.ExtensionContext) {
+  if (mcpProc) { vscode.window.showInformationMessage("VBA Tools server already running."); return; }
+  if (os.platform() !== "win32") {
+    vscode.window.showWarningMessage("VBA Tools features require Windows (Excel + PowerShell).");
+    return;
+  }
+
+  const cfg = vscode.workspace.getConfiguration("vbaMcp");
+  const serverJs = path.join(context.extensionPath, "dist-server", "server.js");
+  const exists = await vscode.workspace.fs.stat(vscode.Uri.file(serverJs)).then(()=>true, ()=>false);
+  if (!exists) {
+    //vscode.window.showErrorMessage(`server.js が見つかりません: ${serverJs}`);
+    vscode.window.showErrorMessage(t('extension.error.serverJsNotFound', { path: serverJs }));
+    channel.appendLine(`[VBA Tools] NOT FOUND: ${serverJs}`);
+    return;
+  }
+  channel.show(true); // 起動時に Output を前面に
+  channel.appendLine(`[VBA Tools] launching: ${serverJs}`);
+  const scriptsDir = path.join(context.extensionPath, "scripts");
+  const listPs = path.join(scriptsDir, "FindAndRun-ExcelMacroByModule.ps1");
+  const runPs  = path.join(scriptsDir, "FindAndRun-ExcelMacroByModule.ps1");
+
+  // ここで存在確認（OutputChannel に出力＆早期 return）
+  const okList = await vscode.workspace.fs.stat(vscode.Uri.file(listPs)).then(()=>true, ()=>false);
+  if (!okList) {
+    channel.show(true);
+    channel.appendLine(`[VBA Tools] NOT FOUND: ${listPs}`);
+    //vscode.window.showErrorMessage(`.ps1 が見つかりません: ${listPs}（.vscodeignoreで除外していないか確認）`);
+    vscode.window.showErrorMessage(t('extension.error.ps1NotFound', { path: listPs }));
+    return;
+  }
+
+  const env = {
+    ...process.env,
+    //MCP_VBA_ROOT: cfg.get<string>("vbaRoot") || (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()),
+    //MCP_PS_LIST: cfg.get<string>("psListPath") || path.join(scriptsDir, "FindAndRun-ExcelMacroByModule.ps1"),
+    //MCP_PS_RUN:  cfg.get<string>("psRunPath")  || path.join(scriptsDir, "FindAndRun-ExcelMacroByModule.ps1")
+    MCP_PS_LIST: listPs,   // ★ プロジェクトルートではなく拡張配下を注入
+    MCP_PS_RUN:  runPs,
+    MCP_VBA_ROOT: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
+  };
+
+  channel.appendLine(`[MCP] starting: ${serverJs}`);
+  mcpProc = spawn(process.execPath, [serverJs], { env });
+
+  mcpProc.stdout.on("data", (d) => {
+    const text = d.toString();
+    channel.append(text);
+    // JSON-RPC のレスポンス取り出し
+    for (const line of text.split(/\r?\n/)) {
+      try {
+        const msg = JSON.parse(line);
+        if (msg.id && (msg.result || msg.error)) {
+          const h = pending.get(msg.id);
+          if (h) {
+            pending.delete(msg.id);
+            msg.error ? h.reject(msg.error) : h.resolve(msg.result);
+          }
+        }
+      } catch { /* ログ行などは無視 */ }
+    }
+  });
+  mcpProc.stderr.on("data", (d) => channel.append(`[MCP:ERR] ${d}`));
+  mcpProc.on("exit", (code) => {
+    channel.appendLine(`[MCP] exited: ${code}`);
+    mcpProc = null;
+  });
+
+  // JSON-RPC handshake（initialize）
+  await rpcSend("initialize", {
+    protocolVersion: "2024-11-05",   //  SDK version your SDK README.md refers to
+    capabilities: {
+    // クライアントが使える機能。最小なら空オブジェクトでOK
+    tools: {},        // tools/call を使う
+    resources: {}     // 使わないなら空でも可
+    // （notificationsなど他機能を使う場合はここに宣言を足す）
+    },
+    clientInfo: {
+      name: "vscode-ext",
+      version: "0.1.0"
+    }
+  });
+  await rpcSend("tools/list", {}); // ツール一覧取得（存在確認）
+  vscode.window.showInformationMessage("MCP server started.");
+}
+
+// stop MCP server
+function stopServer() {
+  if (mcpProc) {
+    mcpProc.kill();
+    mcpProc = null;
+    vscode.window.showInformationMessage("MCP server stopped.");
+  }
+}
+
+// Lightweight JSON-RPC client (line-delimited)
+function rpcSend(method: string, params: any): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!mcpProc) { return reject(new Error("MCP server not running")); }
+    const id = ++reqId;
+    pending.set(id, { resolve, reject });
+    const msg = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
+    mcpProc.stdin.write(msg, "utf8");
+  });
+}
+
+// Model Context Protocol tools/call
+async function callTool(name: string, args: any): Promise<any> {
+  const res = await rpcSend("tools/call", { name, arguments: args });
+  // SDK標準のレスポンスは { content: [{type:"text", text:"..."}] } 等
+  return res;
+}
+
+// ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Command: Search and jump to line ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+async function cmdSearchAndJump() {
+  const query = await vscode.window.showInputBox({
+    prompt: t('extension.prompt.searchQuery'),
+    placeHolder: t('extension.placeholder.searchQuery')
+  });
+  if (!query) {return;}
+
+  const isRegex = /^\/.*\/$/.test(query);
+  const searchQuery  = isRegex ? query.slice(1, -1) : query;
+
+  // parameters are useRegex
+  const res = await callTool("vba_search_code", {
+    query: searchQuery ,
+    useRegex: isRegex,
+    // moduleFilter: "...", workbookFilter: "..." // 必要に応じて
+  });
+
+  // ---- Only JSON safe parse ----
+  const raw = (res?.content?.[0]?.text ?? "").toString().trim();
+  const start = Math.min(
+    ...['{', '['].map(ch => {
+      const i = raw.indexOf(ch);
+      return i === -1 ? Number.POSITIVE_INFINITY : i;
+    })
+  );
+  if (!Number.isFinite(start)) {
+    vscode.window.showErrorMessage("検索結果の解析に失敗しました。");
+    channel.appendLine("[ParseError] " + raw);
+    return;
+  }
+  let payload: any;
+  try { payload = JSON.parse(raw.slice(start)); }
+  catch (e) {
+    vscode.window.showErrorMessage("検索結果の解析に失敗しました。");
+    channel.appendLine("[ParseError] " + raw);
+    return;
+  }
+
+  const hits: any[] = Array.isArray(payload.hits) ? payload.hits : [];
+  const count = Number.isFinite(payload.count) ? payload.count : hits.length;
+  if (!hits.length) {
+    vscode.window.showInformationMessage("ヒットなし");
+    return;
+  }
+
+  // 1) ヒットの型（受信JSONの形に合わせて必要なら調整）
+  type VbaHit = {
+    workbook?: string;
+    module?: string;
+    proc?: string | null;
+    line?: number;
+    snippet?: string;
+    qualified?: string | null;
+    compType?: number;   // 1,2,3,100...
+    exportExt?: string;  // "bas" | "cls" | "frm"    
+  };
+
+  // 2) QuickPick のアイテム型を拡張
+  type HitItem = vscode.QuickPickItem & { hit: VbaHit; runnable: boolean; qualified: string | null };
+
+  const items: HitItem[] = hits.map((h: VbaHit) => {
+    const wb  = h.workbook ?? "(unknown)";
+    const mod = h.module ?? "(unknown)";
+    const pr  = h.proc ?? "";
+    const line = h.line ?? "?";
+    const desc = pr ? `${mod}.${pr}` : `${mod}（実行不可）`;
+    const qualified =
+      h.qualified
+        ? String(h.qualified).replace(/\\u0027/gi, "'")
+        : (h.workbook && h.module && h.proc ? `'${h.workbook}'!${h.module}.${h.proc}` : null);
+
+      return {
+        label: `${wb}:${line}`,
+        description: desc,
+        detail: h.snippet ?? "",
+        hit: h,                                   // ★ ここで保持
+        qualified,
+        runnable: !!(qualified && qualified.includes("!") && qualified.includes(".")),
+      };
+  });
+
+  const picked = await vscode.window.showQuickPick(items, { /* ... */ });
+  if (!picked) {return;}
+  await openHit(picked.hit);
+
+}
+
+// ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Command: List and run macros ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+async function cmdListAndRunMacro() {
+  //const moduleName = await vscode.window.showInputBox({ prompt: "VBA モジュール名（VB_Name）", placeHolder: "Module1" });
+  const moduleName = await vscode.window.showInputBox({
+    prompt: t('extension.prompt.moduleName'),
+    placeHolder: t('extension.placeholder.moduleName')
+  });
+  if (!moduleName) { return; }
+
+  const active = vscode.window.activeTextEditor?.document;
+  const basPath = active && active.fileName.toLowerCase().endsWith(".bas") ? active.fileName : undefined;
+
+  await vscode.window.withProgress(
+    { //location: vscode.ProgressLocation.Notification, title: "Excel マクロ一覧を取得中…", cancellable: false },
+      location: vscode.ProgressLocation.Notification,
+      title: t('extension.progress.fetchingMacroList'),
+      cancellable: false
+    },
+    async (progress) => {
+      const listRes = await callTool("excel_list_macros", { moduleName, basPath });
+      const listText = (listRes?.content?.[0]?.text ?? "").toString();
+      let ary: Array<{ Qualified: string; Proc: string; WorkbookName: string; Module: string }> = [];
+      try { ary = JSON.parse(listText); } catch {
+        //vscode.window.showErrorMessage("マクロ一覧の解析に失敗しました。Output: VBA Tools を確認してください。");
+        vscode.window.showErrorMessage(t('extension.error.macroListParsingFailed'));
+        return;
+      }
+      if (!ary.length) {
+        //vscode.window.showWarningMessage("Public Sub が見つかりませんでした。");
+        vscode.window.showWarningMessage(t('extension.warning.publicSubNotFound'));
+        return;
+      }
+
+      type MacroItem = { WorkbookName: string; Module: string; Proc: string; Qualified: string };
+
+      const items = ary.map((x: MacroItem) => ({
+        label: x.Proc,
+        description: `${x.WorkbookName} / ${x.Module}`,
+        detail: x.Qualified,
+        macro: x,                        // ← 元データを保持
+      }));
+
+      const picked = await vscode.window.showQuickPick(items, {
+        //placeHolder: "実行するマクロを選択",
+        placeHolder: t('extension.placeholder.selectMacroToRun'),
+        matchOnDetail: true,
+        ignoreFocusOut: true,
+      });
+      if (!picked) {return;}
+
+      const m = picked.macro as MacroItem;
+      // ★ Qualified を優先して渡す（完全修飾で一意）
+      const runArgs: any = {
+        qualified: m.Qualified,          // 例：'Book1.xlsm'!Module1.aaa
+        // 後方互換のために補助情報も添える（サーバ側で fallback に使える）
+        moduleName: m.Module,
+        procName: m.Proc,
+        workbookName: m.WorkbookName,
+        basPath,
+        ActivateExcel: true,            // 実行時は前面化
+        ShowStatus: true                // 実行時はステータスをON
+      };
+      const runRes = await callTool("excel_run_macro", runArgs);
+
+      progress.report({ message: `実行中: ${picked.detail}` });
+      const runText = (runRes?.content?.[0]?.text ?? "").toString();
+      try {
+        const payload = JSON.parse(runText);
+        if (payload.ok) {
+          vscode.window.showInformationMessage(`実行完了: ${payload.ran}`);
+        } else {
+          vscode.window.showErrorMessage(`実行失敗: ${payload.ran} (${payload.lastError?.error ?? "unknown"})`);
+        }
+      } catch {
+        // JSONでなければ生文字列を通知
+        vscode.window.showInformationMessage(runText || `Executed: ${picked.detail}`);
+      }
+    }
+  );
+}
+
 /** Tree Item */
 class FileTreeItem extends vscode.TreeItem {
   constructor(
@@ -127,19 +620,13 @@ class FileTreeItem extends vscode.TreeItem {
       : undefined;
 
     // 右クリック用の判定
-    //this.contextValue = (ext === '.frx') ? 'binaryFrx' : 'vbaModuleFile';
-    //this.contextValue = (ext === '.frx') ? 'binaryFrx' : 'vbaModuleFile';
-    //console.log(`Context value: ${this.contextValue}`); // デバッグ用ログ
-    //console.log(`File extension: ${ext}`);
     if (ext === '.frx') {
       this.contextValue = 'binaryFrx';
     } else if (['.bas', '.cls', '.frm'].includes(ext)) {
       this.contextValue = 'importableFile'; // インポート可能なファイル
     } else {
-    this.contextValue = 'unknownFile'; // その他のファイル
-
-}
-
+      this.contextValue = 'unknownFile'; // その他のファイル
+    }
   }
 }
 
@@ -225,6 +712,16 @@ export function activate(context: vscode.ExtensionContext) {
   const folderPath = context.globalState.get<string>('vbaExportFolder');
   const treeProvider = new SimpleTreeProvider(folderPath);
   const treeView = vscode.window.createTreeView('exportPanel', { treeDataProvider: treeProvider });
+  //for MCP
+  channel = vscode.window.createOutputChannel("VBA Tools");
+  context.subscriptions.push(channel);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("excelVbaSync.searchAndJump", async () => {
+      await cmdSearchAndJump();         // ← 引数で渡さない
+    })
+  );
+  extCtx = context;
 
   // Watch the folder for changes
   if (folderPath) {
@@ -233,7 +730,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   const timestamp = getTimestamp();
 
-  // Export VBA
+  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Export VBA ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   context.subscriptions.push(
     vscode.commands.registerCommand('excel-vba-sync.exportVBA', async (fp?: string) => {
       // Confirm export folder
@@ -261,7 +758,7 @@ export function activate(context: vscode.ExtensionContext) {
         location: vscode.ProgressLocation.Notification,
         title: t('extension.info.exporting'), cancellable: false
       }, () => new Promise<void>(resolve => {
-        outputChannel.appendLine(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+        outputChannel.appendLine(" > > > > > > > > > > > > > > > > > > > >");
         outputChannel.appendLine(`[${timestamp}] ${t('extension.info.exporting')}`);
         outputChannel.show();
         cp.exec(cmd, { encoding: 'buffer' }, (err, stdout, stderr) => {
@@ -337,7 +834,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Import VBA
+  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Import VBA ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   context.subscriptions.push(
     vscode.commands.registerCommand('excel-vba-sync.importVBA', async (item: FileTreeItem) => {
       let filePath: string;
@@ -399,7 +896,7 @@ export function activate(context: vscode.ExtensionContext) {
         + `& '${script}' '${filePath}' ;exit $LASTEXITCODE;`
         + `}"`;
       //vscode.window.showInformationMessage(t('extension.info.targetFolderFiles', { 0: filePath }));
-      outputChannel.appendLine(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+      outputChannel.appendLine(" > > > > > > > > > > > > > > > > > > > >");
       outputChannel.appendLine(`[${timestamp}] ${t('extension.info.targetFolderFiles', { 0: filePath })}`);
       outputChannel.show();
 
@@ -479,6 +976,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Set Export Folder ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   context.subscriptions.push(outputChannel); // 拡張機能終了時にチャネルを破棄
   context.subscriptions.push(
     vscode.commands.registerCommand('excel-vba-sync.setExportFolder', async () => {
@@ -496,7 +994,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // exportModuleByName
+  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Export Module by Name ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   context.subscriptions.push(
     vscode.commands.registerCommand('excel-vba-sync.exportModuleByName', async (item: FileTreeItem) => {
       const timestamp = getTimestamp();
@@ -517,7 +1015,18 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       const bookName = path.basename(path.dirname(item.uri.fsPath)); // フォルダ名（ブック名）
-      const moduleName = path.basename(item.uri.fsPath, path.extname(item.uri.fsPath)); // モジュール名（拡張子なし）
+      let moduleName = path.basename(item.uri.fsPath, path.extname(item.uri.fsPath)); // モジュール名（拡張子なし）
+      if(!moduleName){
+        let moduleName = await vscode.window.showInputBox({
+          prompt: "VBA モジュール名（VB_Name）", placeHolder: "Module1",
+          validateInput: (v)=> v.trim().length === 0 ? "モジュール名を入力してください" :
+                      /\s/.test(v) ? "空白は使用できません" : null
+          });
+      }
+      if (!moduleName) {
+        vscode.window.showInformationMessage("キャンセルしました。");
+        return;
+      }
       const script = path.join(context.extensionPath, 'scripts', 'export_opened_vba.ps1');
       const cmd = `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass `
         + `-Command "& { `
@@ -525,7 +1034,7 @@ export function activate(context: vscode.ExtensionContext) {
         + `& '${script}' '${exportFolder}' '${bookName}' '${moduleName}' ;exit $LASTEXITCODE; `
         + `}"`;
 
-      outputChannel.appendLine(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+      outputChannel.appendLine(" > > > > > > > > > > > > > > > > > > > >");
       outputChannel.appendLine(`[${timestamp}] ${t('extension.info.exportingModule', { 0: fileName })}`);
       outputChannel.show();
 
@@ -604,6 +1113,20 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand("vbaMcp.start", () => startServer(context)),
+    vscode.commands.registerCommand("vbaMcp.stop",  () => stopServer()),
+    vscode.commands.registerCommand("vbaMcp.searchCode", async () => {
+      await ensureServer(context);
+      await cmdSearchAndJump();
+    }),
+    vscode.commands.registerCommand("vbaMcp.listAndRunMacro", async () => {
+      await ensureServer(context);
+      await cmdListAndRunMacro();
+    }),
+    { dispose: () => stopServer() }
+  );
+
   // スタートアップ時に表示されるステータスバーアイコンの登録
   const statusExport = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusExport.text = '$(cloud-download) Export';
@@ -625,4 +1148,8 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-export function deactivate() {}
+//export function deactivate() {}
+export function deactivate() {
+   stopServer();
+   extCtx = undefined;
+}

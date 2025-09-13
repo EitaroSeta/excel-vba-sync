@@ -1,161 +1,186 @@
-  {
+{
     "name": "excel-vba-sync",
     "displayName": "excel-vba-sync",
     "description": "Export VBA modules to VSCode & import them back to Excel.",
-    "version": "0.0.26",
+    "version": "0.0.27",
     "publisher": "9kv8xiyi",
-    "license": "MIT",   
+    "license": "MIT",
     "author": {
-      "name": "Eitaro Seta",
-      "email": "seta.eitaro@gmail.com",
-      "url": "https://github.com/EitaroSeta"
+        "name": "Eitaro Seta",
+        "email": "seta.eitaro@gmail.com",
+        "url": "https://github.com/EitaroSeta"
     },
     "repository": {
-      "type": "git",
-      "url": "https://github.com/EitaroSeta/excel-vba-sync.git"
+        "type": "git",
+        "url": "https://github.com/EitaroSeta/excel-vba-sync.git"
     },
     "keywords": [
-      "excel",
-      "xlsm",
-      "csv",
-      "automation",
-      "office",
-      "vba",
-      "vscode",
-      "spreadsheet"
+        "excel",
+        "xlsm",
+        "csv",
+        "automation",
+        "office",
+        "vba",
+        "vscode",
+        "spreadsheet"
     ],
     "categories": [
-      "Programming Languages",
-      "Debuggers",
-      "Formatters",
-      "Visualization",
-      "Testing",
-      "Data Science",
-      "Other"
+        "Programming Languages",
+        "Debuggers",
+        "Formatters",
+        "Visualization",
+        "Testing",
+        "Data Science",
+        "Other"
     ],
     "icon": "media/icon.png",
     "engines": {
-      "vscode": "^1.102.0"
+        "vscode": "^1.102.0"
     },
     "main": "./out/extension.js",
     "contributes": {
-      "viewsContainers": {
-        "activitybar": [
-          {
-            "id": "excelVbaSync",
-            "title": "Excel VBA VSCode Sync",
-            "icon": "media/vscode_activity_icon_vbvs.svg"
-          }
-        ]
-      },
-      "configuration": {
-        "type": "object",
-        "title": "Excel VBA Sync Configuration",
-        "properties": {
-          "excelVbaSync.exportFolder": {
-            "type": "string",
-            "default": "exported",
-            "description": "VBAÉÇÉWÉÖÅ[ÉãÇÃÉGÉNÉXÉ|Å[ÉgêÊÉtÉHÉãÉ_"
-          }
-        }
-      },
-      "views": {
-        "excelVbaSync": [
-          {
-            "id": "exportPanel",
-            "name": "v.0.0.26",
-            "icon": "media/icon.png"
-          }
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "excelVbaSync",
+                    "title": "Excel VBA VSCode Sync",
+                    "icon": "media/vscode_activity_icon_vbvs.svg"
+                }
+            ]
+        },
+        "configuration": {
+            "type": "object",
+            "title": "Excel VBA Sync Configuration",
+            "properties": {
+                "excelVbaSync.exportFolder": {
+                    "type": "string",
+                    "default": "exported",
+                    "description": "VBAÔøΩÔøΩÔøΩWÔøΩÔøΩÔøΩ[ÔøΩÔøΩÔøΩÃÉGÔøΩNÔøΩXÔøΩ|ÔøΩ[ÔøΩgÔøΩÔøΩtÔøΩHÔøΩÔøΩÔøΩ_"
+                }
+            }
+        },
+        "views": {
+            "excelVbaSync": [
+                {
+                    "id": "exportPanel",
+                    "name": "v.0.0.27",
+                    "icon": "media/icon.png"
+                }
+            ],
+            "explorer": [
+                {
+                    "id": "excelVbaSyncView",
+                    "name": "VBA Sync",
+                    "icon": "media/icon.png"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "excel-vba-sync.exportVBA",
+                "title": "Export All Modules From VBA",
+                "icon": "$(cloud-download)"
+            },
+            {
+                "command": "excel-vba-sync.importVBA",
+                "title": "Import Module To VBA",
+                "icon": "$(cloud-upload)"
+            },
+            {
+                "command": "excel-vba-sync.setExportFolder",
+                "title": "Set Export Folder",
+                "icon": "$(folder)"
+            },
+            {
+                "command": "excel-vba-sync.exportModuleByName",
+                "title": "Export Module By Name"
+            },
+            {
+                "command": "vbaMcp.start",
+                "title": "Excel VBA: Start Server"
+            },
+            {
+                "command": "vbaMcp.stop",
+                "title": "Excel VBA: Stop Server"
+            },
+            {
+                "command": "vbaMcp.searchCode",
+                "title": "Excel VBA: Search Code"
+            },
+            {
+                "command": "vbaMcp.listAndRunMacro",
+                "title": "Excel VBA: List & Run Macro"
+            }
         ],
-        "explorer": [
-          {
-            "id": "excelVbaSyncView",
-            "name": "VBA Sync",
-            "icon": "media/icon.png"
-          }
+        "menus": {
+            "view/title": [
+                {
+                    "command": "excel-vba-sync.exportVBA",
+                    "when": "view == exportPanel",
+                    "group": "navigation"
+                },
+                {
+                    "command": "excel-vba-sync.importVBA",
+                    "when": "view == exportPanel",
+                    "group": "navigation"
+                },
+                {
+                    "command": "excel-vba-sync.setExportFolder",
+                    "when": "view == exportPanel",
+                    "group": "navigation"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "excel-vba-sync.importVBA",
+                    "when": "viewItem == importableFile",
+                    "group": "navigation"
+                },
+                {
+                    "command": "excel-vba-sync.exportModuleByName",
+                    "when": "viewItem == importableFile",
+                    "group": "navigation"
+                }
+            ]
+        },
+        "languages": [
+            {
+                "id": "vb",
+                "aliases": [
+                    "Visual Basic",
+                    "vb"
+                ],
+                "extensions": [
+                    ".frm",
+                    ".cls"
+                ]
+            }
         ]
-      },
-      "commands": [
-        {
-          "command": "excel-vba-sync.exportVBA",
-          "title": "Export All Modules From VBA",
-          "icon":"$(cloud-download)"
-        },
-        {
-          "command": "excel-vba-sync.importVBA",
-          "title": "Import Module To VBA",
-          "icon":"$(cloud-upload)"
-        },
-        {
-          "command": "excel-vba-sync.setExportFolder",
-          "title": "Set Export Folder",
-          "icon": "$(folder)"
-        },
-        {
-          "command": "excel-vba-sync.exportModuleByName",
-          "title": "Export Module By Name"
-        }        
-      ],
-      "menus": {
-        "view/title": [
-          {
-            "command": "excel-vba-sync.exportVBA",
-            "when": "view == exportPanel",
-            "group": "navigation"
-          },
-          {
-            "command": "excel-vba-sync.importVBA",
-            "when": "view == exportPanel",
-            "group": "navigation"
-          },
-          {
-            "command": "excel-vba-sync.setExportFolder",
-            "when": "view == exportPanel",
-            "group": "navigation"
-          }
-        ],
-        "view/item/context": [
-        {
-          "command": "excel-vba-sync.importVBA",
-          "when": "viewItem == importableFile",
-          "group": "navigation"
-        },
-        {
-          "command": "excel-vba-sync.exportModuleByName",
-          "when": "viewItem == importableFile",
-          "group": "navigation"
-        }
-       ]  
-      },
-      "languages": [
-        {
-            "id": "vb",
-            "aliases": ["Visual Basic", "vb"],
-            "extensions": [".frm", ".cls"]
-        }
-      ]
     },
-
     "scripts": {
-      "vscode:prepublish": "npm run compile",
-      "compile": "tsc -p ./",
-      "watch": "tsc -watch -p ./",
-      "pretest": "npm run compile && npm run lint",
-      "lint": "eslint src",
-      "test": "vscode-test"
+        "vscode:prepublish": "npm run build",
+        "build": "npm run compile && npm run build:server",
+        "compile": "tsc -p ./",
+        "build:server": "tsc -p src/server/tsconfig.server.json",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src",
+        "test": "vscode-test"
     },
     "devDependencies": {
-      "@types/mocha": "^10.0.10",
-      "@types/node": "20.x",
-      "@types/vscode": "^1.102.0",
-      "@typescript-eslint/eslint-plugin": "^8.31.1",
-      "@typescript-eslint/parser": "^8.31.1",
-      "@vscode/test-cli": "^0.0.11",
-      "@vscode/test-electron": "^2.5.2",
-      "eslint": "^9.25.1",
-      "typescript": "^5.8.3"
+        "@types/mocha": "^10.0.10",
+        "@types/node": "20.x",
+        "@types/vscode": "^1.102.0",
+        "@typescript-eslint/eslint-plugin": "^8.31.1",
+        "@typescript-eslint/parser": "^8.31.1",
+        "@vscode/test-cli": "^0.0.11",
+        "@vscode/test-electron": "^2.5.2",
+        "eslint": "^9.25.1",
+        "typescript": "^5.8.3"
     },
     "dependencies": {
-      "iconv-lite": "^0.6.3"
+        "@modelcontextprotocol/sdk": "^1.17.5",
+        "iconv-lite": "^0.6.3",
+        "zod": "^3.25.76"
     }
-  }
+}
