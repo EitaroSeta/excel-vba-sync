@@ -19,8 +19,18 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          # ルート以外に lock がある場合は相対パスを指定（複数可・改行区切り）
+          cache-dependency-path: |
+            package-lock.json
+      # lockfile の存在チェック（無ければ即失敗）
+      - name: Verify lockfile exists
+        run: |
+          if [ ! -f package-lock.json ]; then
+            echo "::error::package-lock.json is missing. Run 'npm install' locally and commit the lockfile."
+            exit 1
+          fi
 
-      - name: Install deps
+      - name: Install deps(strict, uses lockfile)
         run: npm ci
 
       - name: Build (if any)
