@@ -1,0 +1,73 @@
+name: DEBUG lockfile regeneration
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  debug-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show repo tree & npm config
+        run: |
+          pwd
+          git status
+          ls -la
+          echo "---- search package.json ----"
+          find . -maxdepth 3 -name package.json -print
+          echo "---- npm version ----"
+          node -v || true
+          npm -v || true
+          echo "---- npm config get package-lock ----"
+          npm config get package-lock || true
+          echo "---- show .npmrc if exists ----"
+          [ -f .npmrc ] && cat .npmrc || echo ".npmrc not found"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Ensure npm will create package-lock.json
+        run: |
+          npm config set package-lock true
+
+      # ★ package.json がサブディレクトリにある場合はここで cd
+      # working-directory: ./subdir
+      - name: Regenerate lockfile
+        run: |
+          set -eux
+          if [ ! -f package.json ]; then
+            echo "::error::package.json not found at repo root. Move to the directory (use 'working-directory')"
+            exit 1
+          fi
+          rm -rf node_modules package-lock.json
+          npm install
+          ls -la
+          git status
+          echo "---- changed files ----"
+          git diff --name-only || true
+
+      - name: Upload generated lockfile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-lockfile
+          path: |
+            package-lock.json
+          if-no-files-found: warn
+
+      - name: Create Pull Request (only lockfile)
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: regenerate package-lock.json"
+          branch: chore/update-lockfile
+          title: "chore: regenerate package-lock.json"
+          body: "Automated lockfile update via GitHub Actions."
+          labels: maintenance
+          add-paths: |
+            package-lock.json
