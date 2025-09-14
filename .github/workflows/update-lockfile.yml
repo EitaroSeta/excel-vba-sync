@@ -4,8 +4,8 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write       # 変更のコミットに必要
-  pull-requests: write  # PR作成に必要
+  contents: write
+  pull-requests: write
 
 jobs:
   update-lockfile:
@@ -17,18 +17,30 @@ jobs:
         with:
           node-version: '20'
 
-      # lockを作り直す（ローカルなし）
-      - name: Regenerate lockfile
+      - name: Ensure lockfile is not ignored (safety)
         run: |
+          if [ -f .gitignore ]; then
+            sed -n '/package-lock\.json/p' .gitignore && \
+              echo "::warning::.gitignore contains package-lock.json. It may prevent committing." || true
+          fi
+
+      - name: npm install to regenerate lockfile
+        # 必要なら working-directory を指定：
+        # working-directory: ./<path-to-your-project>
+        run: |
+          set -eux
+          npm config set package-lock true
           rm -rf node_modules package-lock.json
           npm install
+          test -f package-lock.json
 
-      # 変更をPRとして提案
-      - name: Create Pull Request
+      - name: Create Pull Request (lockfile only)
         uses: peter-evans/create-pull-request@v6
         with:
           commit-message: "chore: regenerate package-lock.json"
           branch: chore/update-lockfile
           title: "chore: regenerate package-lock.json"
-          body: "Automated lockfile update via GitHub Actions (no local files)."
+          body: "Automated lockfile update via GitHub Actions."
           labels: maintenance
+          add-paths: |
+            package-lock.json
