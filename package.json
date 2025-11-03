@@ -2,7 +2,7 @@
     "name": "excel-vba-sync",
     "displayName": "excel-vba-sync",
     "description": "Export VBA modules to VSCode & import them back to Excel.",
-    "version": "0.0.27",
+    "version": "0.0.28",
     "publisher": "9kv8xiyi",
     "license": "MIT",
     "author": {
@@ -37,6 +37,9 @@
     "engines": {
         "vscode": "^1.102.0"
     },
+    "activationEvents": [
+        "onLanguage:vb"
+    ],
     "main": "./out/extension.js",
     "contributes": {
         "viewsContainers": {
@@ -55,7 +58,7 @@
                 "excelVbaSync.exportFolder": {
                     "type": "string",
                     "default": "exported",
-                    "description": "VBAï¿½ï¿½ï¿½Wï¿½ï¿½ï¿½[ï¿½ï¿½ï¿½ÌƒGï¿½Nï¿½Xï¿½|ï¿½[ï¿½gï¿½ï¿½tï¿½Hï¿½ï¿½ï¿½_"
+                    "description": "VBA?¿½?¿½?¿½W?¿½?¿½?¿½[?¿½?¿½?¿½ÌƒG?¿½N?¿½X?¿½|?¿½[?¿½g?¿½?¿½t?¿½H?¿½?¿½?¿½_"
                 }
             }
         },
@@ -63,7 +66,7 @@
             "excelVbaSync": [
                 {
                     "id": "exportPanel",
-                    "name": "v.0.0.27",
+                    "name": "v.0.0.28",
                     "icon": "media/icon.png"
                 }
             ],
@@ -96,6 +99,11 @@
                 "title": "Export Module By Name"
             },
             {
+                "command": "excel-vba-sync.generateFlowChart",
+                "title": "Generate VBA Flow Chart",
+                "icon": "$(graph)"
+            },
+            {
                 "command": "vbaMcp.start",
                 "title": "Excel VBA: Start Server"
             },
@@ -113,6 +121,26 @@
             }
         ],
         "menus": {
+            "explorer/context": [
+                {
+                    "command": "excel-vba-sync.generateFlowChart",
+                    "when": "explorerResourceIsFile && resourceExtname =~ /\\.(bas|cls|frm)$/",
+                    "group": "vbatools@1"
+                }
+            ],
+            "editor/context": [
+                {
+                    "command": "excel-vba-sync.generateFlowChart",
+                    "when": "editorFocus && resourceExtname =~ /\\.(bas|cls|frm)$/",
+                    "group": "vbatools@1"
+                }
+            ],
+            "commandPalette": [
+                {
+                    "command": "excel-vba-sync.generateFlowChart",
+                    "when": "true"
+                }
+            ],
             "view/title": [
                 {
                     "command": "excel-vba-sync.exportVBA",
@@ -140,9 +168,16 @@
                     "command": "excel-vba-sync.exportModuleByName",
                     "when": "viewItem == importableFile",
                     "group": "navigation"
+                },
+                {
+                    "command": "excel-vba-sync.generateFlowChart",
+                    "when": "viewItem == importableFile",
+                    "group": "vbatools"
                 }
             ]
         },
+        "keybindings": [
+        ],
         "languages": [
             {
                 "id": "vb",

@@ -9,6 +9,11 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.28] - 2025-11-03
+### ### Changed
+- Create an mmd folder in the export destination and output a simple flowchart in Mermaid format (*.mmd) as an experimental feature.
+- Fine-tuned message text.
+
 ## [0.0.27] - 2025-09-13
 ### ### Added
 - Excel Macro Execution.  

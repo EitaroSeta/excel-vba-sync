@@ -721,6 +721,138 @@ export function activate(context: vscode.ExtensionContext) {
       await cmdSearchAndJump();         // ← 引数で渡さない
     })
   );
+
+  // VBAフローチャート生成コマンド
+  context.subscriptions.push(
+    vscode.commands.registerCommand('excel-vba-sync.generateFlowChart', async (uri?: vscode.Uri) => {
+      let vbaFilePath: string;
+      const timestamp = getTimestamp();
+      
+      if (uri && uri.fsPath && uri.fsPath.length > 0) {
+        // 右クリックから呼び出された場合
+        vbaFilePath = uri.fsPath;
+      } else {
+        // コマンドパレットから呼び出された場合、または現在開いているファイルを使用
+        const activeEditor = vscode.window.activeTextEditor;
+        if (activeEditor && activeEditor.document.uri.scheme === 'file') {
+          const activeFile = activeEditor.document.uri.fsPath;
+          const ext = path.extname(activeFile).toLowerCase();
+          if (['.bas', '.cls', '.frm'].includes(ext)) {
+            vbaFilePath = activeFile;
+          } else {
+            const fileUri = await vscode.window.showOpenDialog({
+              filters: {
+                'VBA Files': ['bas', 'cls', 'frm']
+              },
+              canSelectFiles: true,
+              canSelectMany: false,
+              title: 'VBAファイルを選択してフローチャートを生成'
+            });
+
+            if (!fileUri || fileUri.length === 0) {
+              return;
+            }
+            
+            vbaFilePath = fileUri[0].fsPath;
+          }
+        } else {
+          const fileUri = await vscode.window.showOpenDialog({
+            filters: {
+              'VBA Files': ['bas', 'cls', 'frm']
+            },
+            canSelectFiles: true,
+            canSelectMany: false,
+            title: 'VBAファイルを選択してフローチャートを生成'
+          });
+
+          if (!fileUri || fileUri.length === 0) {
+            return;
+          }
+          
+          vbaFilePath = fileUri[0].fsPath;
+        }
+      }
+
+      const folderPath = path.dirname(vbaFilePath);
+      const baseName = path.basename(vbaFilePath, path.extname(vbaFilePath));
+      
+      // mmdフォルダを作成
+      const mmdFolderPath = path.join(folderPath, 'mmd');
+      if (!fs.existsSync(mmdFolderPath)) {
+        fs.mkdirSync(mmdFolderPath, { recursive: true });
+      }
+
+      // ステップ1: VBA → JSON
+      const vbaScript = path.join(context.extensionPath, 'scripts', 'VBA-FlowJson.ps1');
+      const vbaCmd = `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass `
+        + `-Command "& { `
+        + `$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); `
+        + `& '${vbaScript}' -FolderPath '${folderPath}' -FilePath '${vbaFilePath}' -OutputFolder '${mmdFolderPath}' ;exit $LASTEXITCODE; `
+        + `}"`;
+
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: t('extension.flowchart.generating'),
+        cancellable: false
+      }, () => new Promise<void>(resolve => {
+        outputChannel.appendLine(" > > > > > > > > > > > > > > > > > > > >");
+        outputChannel.appendLine(`[${timestamp}] ${t('extension.flowchart.generating')}`);
+        outputChannel.show();
+        
+        cp.exec(vbaCmd, { encoding: 'buffer' }, (err, stdout, stderr) => {
+          const out = iconv.decode(stdout as Buffer, 'utf-8').trim();
+          const errStr = iconv.decode(stderr as Buffer, 'utf-8').trim();
+          outputChannel.append(out.endsWith('\n') ? out : out + '\n');
+          
+          if (errStr && errStr.trim().length > 0) {
+            outputChannel.appendLine(`[${getTimestamp()}] STDERR: ${errStr.trim()}`);
+          }
+          
+          const exitCode = err?.code;
+          const timestamp = getTimestamp();
+          
+          if (exitCode === 0 || exitCode === undefined) {
+            // JSON生成成功、次にMermaid生成
+            const jsonPath = path.join(mmdFolderPath, `${baseName}.flow.json`);
+            const mermaidScript = path.join(context.extensionPath, 'scripts', 'Convert-FlowJsonToMermaid.ps1');
+            const mermaidCmd = `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass `
+              + `-Command "& { `
+              + `$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); `
+              + `& '${mermaidScript}' '${jsonPath}' -OutDir '${mmdFolderPath}' ;exit $LASTEXITCODE; `
+              + `}"`;
+              
+            cp.exec(mermaidCmd, { encoding: 'buffer' }, (err2, stdout2, stderr2) => {
+              const out2 = iconv.decode(stdout2 as Buffer, 'utf-8').trim();
+              const errStr2 = iconv.decode(stderr2 as Buffer, 'utf-8').trim();
+              outputChannel.append(out2.endsWith('\n') ? out2 : out2 + '\n');
+              
+              if (errStr2 && errStr2.trim().length > 0) {
+                outputChannel.appendLine(`[${getTimestamp()}] STDERR: ${errStr2.trim()}`);
+              }
+              
+              const exitCode2 = err2?.code;
+              const timestamp2 = getTimestamp();
+              
+              if (exitCode2 === 0 || exitCode2 === undefined) {
+                outputChannel.appendLine(`[${timestamp2}] ${t('extension.flowchart.completed', { 0: baseName })}`);
+                const filesCreatedMsg = t('extension.flowchart.filesCreated', { 0: baseName }).replace('{0}', baseName);
+                outputChannel.appendLine(`[${timestamp2}] ${filesCreatedMsg}`);
+                outputChannel.show();
+              } else {
+                outputChannel.appendLine(`[${timestamp2}] ${t('extension.flowchart.mermaidError', { 0: errStr2 })}`);
+                outputChannel.show();
+              }
+              resolve();
+            });
+          } else {
+            outputChannel.appendLine(`[${timestamp}] ${t('extension.flowchart.jsonError', { 0: errStr })}`);
+            outputChannel.show();
+            resolve();
+          }
+        });
+      }));
+    })
+  );
   extCtx = context;
 
   // Watch the folder for changes

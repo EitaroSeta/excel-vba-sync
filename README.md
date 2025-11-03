@@ -6,27 +6,29 @@
 ## 概要（Japanese）
 
 **EXCEL VBA module Sync** は、開いているExcel の VBA モジュールを VSCode 上で編集するための拡張機能です。  
-VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内容のVBAへのインポートが行えます。
-Winsdows10/11＋Excel＋VSCode環境のみです。
+VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内容のVBAへのインポートが行えます。  
+**Winsdows10/11＋Excel＋VSCode環境でのみ動作します。**
 
-- ✅ Excelから `.bas` / `.cls` / `.frm` 内のコードをエクスポート（保存）
+- ✅ 開いているExcelブックから `.bas` / `.cls` / `.frm` 内のコードをエクスポート（保存）
 - ✅ VSCode 上で編集
-- ✅ 編集したモジュールを Excel にインポート（反映）
+- ✅ 編集したモジュールを 開いているExcelブック にインポート（反映）
 - ✅ インポートはモジュール差し替えにて行います
 - ✅ エクスポートしたモジュールファイルはgitで管理しやすいようにUTF-8の文字コードで出力されます。
 - ✅ Excel マクロ実行（モジュール＋プロシージャ、または完全修飾名で実行可能）
 - ✅ VBA コード検索（開いている全ブック・全モジュールを対象に、正規表現やフィルタ指定で検索可能）
+- ✅ フローチャート作成（右クリックで選択したモジュールのフローチャートを作成）
 
 ### 🔧 主な機能
 
 | 機能                           | 説明                                      |
 |--------------------------------|-------------------------------------------|
-| Export All Modulus From VBA    | Excel から全モジュールを抽出・保存します。|
+| Export All Modules From VBA    | 開いているExcel から全モジュールを抽出・保存|
 | Import Module To VBA           | VSCode 上で編集したコードを Excel に反映（単独モジュール/ファイル） |
-| Set Export Folder              | ダイアログ選択可能                        |
+| Set Export Folder              | エクスポート先フォルダをダイアログにて選択      |
+| Excel VBA: List & Run Macro    | 	開いているブックより指定マクロを実行   |
+| Excel VBA: Search VBA Code	   | 開いているブック・モジュール対象にコード検索（正規表現対応） |
+| Generate VBA Flow Chart        | エクスポート先フォルダに mmdフォルダを作成し、マーメイド形式(*.mmd)で簡易フローチャートを出力 （実験的機能）|
 | コマンドパレット／ボタン対応      | GUI 操作または `Ctrl+Shift+P` から実行可  |
-| List &Run Macro                | 	指定マクロを実行                              |
-| Search VBA Code	             |全ブック・モジュール対象にコード検索（正規表現対応） |
 ---
 
 ## Overview (English)
@@ -35,24 +37,26 @@ Winsdows10/11＋Excel＋VSCode環境のみです。
 You can export VBA modules to VS Code and import the content edited in VS Code back into VBA.
 Works in a Windows 10/11 + Excel + VS Code environment only.
 
-- ✅ Export inner code of  `.bas` / `.cls` / `.frm` from Excel
+- ✅ Export inner code of  `.bas` / `.cls` / `.frm` from opened Excel
 - ✅ Edit VBA modules in VSCode
-- ✅ Import modules back into Excel
+- ✅ Import modules back into opened Excel
 - ✅ Import is performed by replacing the module.
 - ✅ Exported module files are saved in UTF-8 encoding, making them easier to manage with Git.
 - ✅ Execute Excel macros (by module/procedure or fully qualified name)
 - ✅ Search VBA code (across all open workbooks/modules, with regex and filters supported)
+- ✅ Generate flowchart (Create a flowchart for the module selected with right-click)
 
 ### 🔧 Features
 
 | Feature                        | Description                                      |
 |--------------------------------|------------------------------------------------------------------|
-| Export All Modules From VBA    | Extract and save all VBA modules from Excel                      |
-| Import Module To VBA           | Reflect modified code back to Excel(Module-based/File-based)     |
+| Export All Modules From VBA    | Extract and save all VBA modules from opened Excel                      |
+| Import Module To VBA           | Reflect modified code back to opended Excel(Module-based/File-based) |
 | Set Export Folder              | Change export folder via Dialog                                  |
-| Command Palette / GUI support  | Use commands or side panel buttons                               |
-| List &Run Macro	             | Execute macros by name or fully qualified path                   | 
-| Search VBA Code	             | Search VBA code (regex supported)                                | 
+| Excel VBA: List & Run Macro	   | Execute macros by name or fully qualified path in the open workbook| 
+| Excel VBA: Search VBA Code	   | Search VBA code in the open workbook (with regex support)        |
+| Generate VBA Flow Chart (Experimental) | Create an mmd folder in the export destination and output a simple flowchart in Mermaid format (*.mmd). |
+| Command Palette / GUI support  | Use commands or side panel buttons                               | 
 ---
 ## 🧩 インストール（VSIX） / Install from VSIX
 
@@ -99,9 +103,7 @@ code --install-extension "$OUT"
 **●COMエラーについて**
 >Excel に長時間触れずに放置した後や、画面ロック復帰直後などにインポート／エクスポートを実行すると、
 次のようなエラーが発生する場合があります。  
-
-`STDERR: Call was rejected by callee. (HRESULT からの例外:0x80010001 (RPC_E_CALL_REJECTED))`  
-
+`STDERR: Call was rejected by callee. (HRESULT からの例外:0x80010001 (RPC_E_CALL_REJECTED))`    
 >これは Excel 側が一時的に応答できない状態にあるため、COM 呼び出しが失敗して発生するエラーです。  
 この場合は **Excelを再起動**すると解消されます。
 
@@ -117,16 +119,15 @@ code --install-extension "$OUT"
 **●About COM Error**
 >When running import/export operations after leaving Excel idle for a long time or resuming from a screen lock,
 you may encounter the following error:  
-
 `STDERR: Call was rejected by callee. (HRESULT 0x80010001)`  
-
 >This occurs because Excel is temporarily unable to respond, causing the COM call to fail.  
 **Restarting Excel** will resolve the issue.
 
 ---
 
 ## 🛠 開発者向け情報 / Development (for GitHub users)
-このセクションは拡張機能の利用者には不要です。拡張の開発や修正向けの作者の備忘です。  
+このセクションは拡張機能の利用者には不要です。拡張の開発や修正する際の作者の備忘です。  
+This section is unnecessary for extension users. It serves as a memo for the author when developing or modifying the extension.  
 https://github.com/EitaroSeta/excel-vba-sync  
 
 ### 前提 / Requirements
@@ -152,10 +153,16 @@ npm run compile
 - **Set Export Folder** — エクスポート先フォルダの指定  
 
 ### パッケージ化 / Package
-`vsce` で配布用 `.vsix` を作成できます（CLI）。  
+- **準備 / Preparation**
 ```powershell
 npm i -g @vscode/vsce  
-vsce package
+```
+- **配布 / Publish**  
+`vsce` で配布用 `.vsix` を作成可能（CLI）。  
+```powershell
+npm run vscode:prepublish    ※npm run compile     
+vsce package                 ※extension.vsix 生成  
+vsce publish                 ※公開  
 ```
 `.vscodeignore` により TypeScript やテスト等はパッケージから除外されます。
 
@@ -165,20 +172,20 @@ vsce package
 - `locales/` — 多言語リソース（`ja.json`, `en.json`）  
 
 ### アーキテクチャ変更概要
-v.0.0.27の機能追加にて、VS Code (`extension.ts`) から Node.js サーバ (`server.ts`) を子プロセスとして起動し、さらに PowerShell スクリプト経由で Excel COM API を操作する流れが追加されました。
+v.0.0.27の機能追加にて、VS Code (`extension.ts`) から Node.js サーバ (`server.ts`) を子プロセスとして起動し、さらに PowerShell スクリプト経由で Excel COM API を操作する流れを追加。
 
 ```mermaid
 flowchart LR
-  EXT["extension.ts\n(VS Code Extension)"]
-  SRV["server.ts\n(Node MCP-like server)"]
-  PS["PowerShell Scripts\n(.ps1)"]
-  XLS["Excel COM\n(VBA Project/Modules)"]
+  EXT["extension.ts(VS Code Extension)"]
+  SRV["server.ts   (Node MCP-like server)"]
+  PS ["PowerShell Scripts(.ps1)"]
+  XLS["Excel COM   (VBA Project/Modules)"]
 
   EXT -- JSON-RPC (stdio) --> SRV
-  SRV -- execFile --> PS
-  PS -- COM Automation --> XLS
-  PS -- stdout(JSON) --> SRV
-  SRV -- result --> EXT
+  SRV -- execFile         --> PS
+  PS  -- COM Automation   --> XLS
+  PS  -- stdout(JSON)     --> SRV
+  SRV -- result           --> EXT
 ```
 ## ⚙️ ローカライズ設定例 / Localization Example
 
