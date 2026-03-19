@@ -30,7 +30,7 @@
   "export.warn.nonMacroFileSkipped": "【WARN】⚠️Powershell: マクロ有効ブック(*.xlsm)/バイナリブック(*.xlsb) ではないためスキップします: {0}",
   "export.info.autoSaveCanceled": "【INFO】✅Powershell: {0} の自動保存を一時的に無効化しました。",
   "export.error.autoSaveCancelFailed": "【ERROR】❌Powershell: {0} の自動保存の無効化に失敗しました。",
-  "export.warn.protectedVBProject": "【WARN】⚠️Powershell: {0} の VBProject は保護されています。保護解除後にエクスポートして下さい。",
+  "export.warn.protectedVBProject": "【WARN】⚠️Powershell: {0} の VBProject は保護されています。エクスポートするには次の操作を行ってください: (1) Excel の [ファイル] → [オプション] → [セキュリティ センター] → [セキュリティ センターの設定] → [マクロの設定] で「VBA プロジェクト オブジェクト モデルへの信頼アクセス」を有効にする、(2) 対象ブックを開き Alt+F11 で VBA エディターを開き、[ツール] → [VBAProject のプロパティ] → [保護] タブでロック/パスワードを解除して保存してください。",
   "export.warn.noModulesProcessed": "【WARN】⚠️Powershell: エクスポート可能なモジュールがありません。",
   "export.info.exportSuccess": "【INFO】✅Powershell: エクスポート成功: {0}",
   "export.warn.exportEmptyModule": "【WARN】⚠️Powershell: {0} はコードが空のため出力しませんでした。",
