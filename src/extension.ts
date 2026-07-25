@@ -130,6 +130,11 @@ function safeName(s: string): string {
   return s.replace(/[\\/:*?"<>|]/g, "_").trim();
 }
 
+// PowerShellのシングルクォート文字列リテラルに埋め込むための最小エスケープ（'を''に二重化）
+function escapeForPsSingleQuoted(s: string): string {
+  return s.replace(/'/g, "''");
+}
+
 // generate candidate directory names for a workbook
 // ex: "Book1.xlsm" -> ["Book1.xlsm", "Book1"]
 function workbookDirCandidates(workbook: string): string[] {
@@ -787,7 +792,7 @@ export function activate(context: vscode.ExtensionContext) {
       const vbaCmd = `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass `
         + `-Command "& { `
         + `$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); `
-        + `& '${vbaScript}' -FolderPath '${folderPath}' -FilePath '${vbaFilePath}' -OutputFolder '${mmdFolderPath}' ;exit $LASTEXITCODE; `
+        + `& '${escapeForPsSingleQuoted(vbaScript)}' -FolderPath '${escapeForPsSingleQuoted(folderPath)}' -FilePath '${escapeForPsSingleQuoted(vbaFilePath)}' -OutputFolder '${escapeForPsSingleQuoted(mmdFolderPath)}' ;exit $LASTEXITCODE; `
         + `}"`;
 
       await vscode.window.withProgress({
@@ -814,13 +819,23 @@ export function activate(context: vscode.ExtensionContext) {
           if (exitCode === 0 || exitCode === undefined) {
             // JSON生成成功、次にMermaid生成
             const jsonPath = path.join(mmdFolderPath, `${baseName}.flow.json`);
+
+            if (!fs.existsSync(jsonPath)) {
+              const msg = t('extension.flowchart.jsonMissing', { 0: jsonPath });
+              outputChannel.appendLine(`[${getTimestamp()}] ${msg}`);
+              outputChannel.show();
+              vscode.window.showErrorMessage(msg);
+              resolve();
+              return;
+            }
+
             const mermaidScript = path.join(context.extensionPath, 'scripts', 'Convert-FlowJsonToMermaid.ps1');
             const mermaidCmd = `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass `
               + `-Command "& { `
               + `$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); `
-              + `& '${mermaidScript}' '${jsonPath}' -OutDir '${mmdFolderPath}' ;exit $LASTEXITCODE; `
+              + `& '${escapeForPsSingleQuoted(mermaidScript)}' '${escapeForPsSingleQuoted(jsonPath)}' -OutDir '${escapeForPsSingleQuoted(mmdFolderPath)}' ;exit $LASTEXITCODE; `
               + `}"`;
-              
+
             cp.exec(mermaidCmd, { encoding: 'buffer' }, (err2, stdout2, stderr2) => {
               const out2 = iconv.decode(stdout2 as Buffer, 'utf-8').trim();
               const errStr2 = iconv.decode(stderr2 as Buffer, 'utf-8').trim();
@@ -834,19 +849,24 @@ export function activate(context: vscode.ExtensionContext) {
               const timestamp2 = getTimestamp();
               
               if (exitCode2 === 0 || exitCode2 === undefined) {
-                outputChannel.appendLine(`[${timestamp2}] ${t('extension.flowchart.completed', { 0: baseName })}`);
                 const filesCreatedMsg = t('extension.flowchart.filesCreated', { 0: baseName }).replace('{0}', baseName);
+                outputChannel.appendLine(`[${timestamp2}] ${t('extension.flowchart.completed', { 0: baseName })}`);
                 outputChannel.appendLine(`[${timestamp2}] ${filesCreatedMsg}`);
                 outputChannel.show();
+                vscode.window.showInformationMessage(t('extension.flowchart.completed', { 0: baseName }));
               } else {
-                outputChannel.appendLine(`[${timestamp2}] ${t('extension.flowchart.mermaidError', { 0: errStr2 })}`);
+                const msg = t('extension.flowchart.mermaidError', { 0: errStr2 });
+                outputChannel.appendLine(`[${timestamp2}] ${msg}`);
                 outputChannel.show();
+                vscode.window.showErrorMessage(msg);
               }
               resolve();
             });
           } else {
-            outputChannel.appendLine(`[${timestamp}] ${t('extension.flowchart.jsonError', { 0: errStr })}`);
+            const msg = t('extension.flowchart.jsonError', { 0: errStr });
+            outputChannel.appendLine(`[${timestamp}] ${msg}`);
             outputChannel.show();
+            vscode.window.showErrorMessage(msg);
             resolve();
           }
         });

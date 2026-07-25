@@ -9,6 +9,17 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.29] - 2026-07-25
+### ### Fixed
+- Fixed garbled Japanese description text for the "Export Folder" setting in `package.json` (#2).
+- Fixed import failure (`Attribute <proc>.VB_ProcData.VB_Invoke_Func`) when importing a module containing a procedure with an assigned macro shortcut key. Standard/class module import (`.bas`/`.cls`) now uses `VBComponents.Import()` — the same approach already used for `.frm` — instead of `CodeModule.AddFromString()`, so all Attribute lines (including shortcut key assignments) are preserved on import (#3).
+
+### ### Improved
+- Hardened the flowchart generation pipeline: escaped single quotes in PowerShell command arguments (paths containing `'` no longer break the command), verify the intermediate `.flow.json` file actually exists before running the Mermaid conversion step, and surface failures via error/info popups in addition to the Output channel.
+
+### ### Known limitations
+- Shortcut key assignments on Sheet/ThisWorkbook code-behind procedures (component type = Document) are still lost on import. `VBComponents.Import()` cannot target Document-type components (VBA API constraint), so this path still requires stripping all Attribute lines before `AddFromString()`.
+
 ## [0.0.28] - 2025-11-03
 ### ### Changed
 - Create an mmd folder in the export destination and output a simple flowchart in Mermaid format (*.mmd) as an experimental feature.

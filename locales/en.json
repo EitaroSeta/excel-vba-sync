@@ -89,6 +89,7 @@
   "extension.flowchart.completed": "【INFO】✅Flowchart generation completed: {0}",
   "extension.flowchart.filesCreated": "【INFO】✅Created {0}.flow.json and {0}.*.mmd in mmd folder",
   "extension.flowchart.failed": "【ERROR】❌Flowchart generation failed: {0}",
+  "extension.flowchart.jsonMissing": "【ERROR】❌JSON generation exited successfully, but the output file was not found: {0}",
   "flowjson.warn.ifContextProcessing": "【WARN】⚠️Powershell: Line {0} processed as normal statement under If context: '{1}'",
   "flowjson.info.originalPaths": "【INFO】✅Powershell: Original paths - Folder: [{0}], File: [{1}]",
   "flowjson.info.cleanedPaths": "【INFO】✅Powershell: Cleaned paths - Folder: [{0}], File: [{1}]",

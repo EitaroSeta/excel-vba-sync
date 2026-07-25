@@ -2,7 +2,7 @@
     "name": "excel-vba-sync",
     "displayName": "excel-vba-sync",
     "description": "Export VBA modules to VSCode & import them back to Excel.",
-    "version": "0.0.28",
+    "version": "0.0.29",
     "publisher": "9kv8xiyi",
     "license": "MIT",
     "author": {
@@ -58,7 +58,7 @@
                 "excelVbaSync.exportFolder": {
                     "type": "string",
                     "default": "exported",
-                    "description": "VBA?øΩ?øΩ?øΩW?øΩ?øΩ?øΩ[?øΩ?øΩ?øΩÃÉG?øΩN?øΩX?øΩ|?øΩ[?øΩg?øΩ?øΩt?øΩH?øΩ?øΩ?øΩ_"
+                    "description": "VBA„É¢„Ç∏„É•„Éº„É´„ÅÆ„Ç®„ÇØ„Çπ„Éù„Éº„ÉàÂÖà„Éï„Ç©„É´„ÉÄ"
                 }
             }
         },

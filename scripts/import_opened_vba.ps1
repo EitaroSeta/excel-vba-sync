@@ -102,11 +102,16 @@ function Import-ModuleToVBProject {
     }
 
     $raw = Get-Content -Path $importPath -Encoding utf8
+
+    # AddFromString はAttribute行（モジュール単位・プロシージャ単位を問わず）を一切受け付けないため、
+    # Type=100（Documentモジュール）の上書き経路に渡すコードはここで全て除去する。
+    # Documentモジュールは VBComponents.Import() が使えない仕様上の制約のため、
+    # ショートカットキー等のプロシージャ単位属性はこの経路では保持できない。
     $codeLines = $raw | Where-Object {
         ($_ -notmatch "^VERSION") -and
         ($_ -notmatch "^BEGIN") -and
         ($_ -notmatch "^END(\r?\n)?$") -and
-        ($_ -notmatch "^Attribute VB_") -and
+        ($_ -notmatch "^Attribute\s") -and
         ($_ -notmatch "^\s*MultiUse\s*=")
     }
     $code = $codeLines -join "`r`n"
@@ -141,10 +146,13 @@ function Import-ModuleToVBProject {
     if ($moduleType -eq 1 -or $moduleType -eq 2) {
 
       try {
-          #$newComp = $vbproject.VBComponents.Add(1)
-          $newComp = $vbproject.VBComponents.Add($moduleType)
-          $newComp.Name = $modName
-          $newComp.CodeModule.AddFromString($code)
+          # VBComponents.Import() はAttribute行込みでファイルをそのまま読み込めるため、
+          # ショートカットキー等のプロシージャ単位属性も含めて完全に保持される（.frmと同じ方式）。
+          # Import()はSJIS想定のため、UTF-8保存されたエクスポート済みファイルを一時的にSJISへ変換する。
+          $tmpImportPath = Convert-CodeFile-Utf8-ToSjisTemp -filePath $importPath -ext $ext
+          $newComp = $vbproject.VBComponents.Import($tmpImportPath)
+          # ファイル内の Attribute VB_Name と一致しない場合の保険として強制リネーム
+          try { $newComp.Name = $modName } catch {}
           #Write-Host "■ $modName を追加しました"
           #Write-Host ($messages."import.info.moduleAdded" -f $modName)
           $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), ($messages."import.info.moduleAdded" -f $modName)
@@ -166,6 +174,18 @@ function Write-SJIS {
     param([string]$Path, [string]$Text)
     $sjis = [System.Text.Encoding]::GetEncoding(932)
     [System.IO.File]::WriteAllText($Path, $Text, $sjis)
+}
+
+# .bas/.cls を UTF-8 で読み → SJIS に変換して一時パスへ（VBComponents.Import に渡すため）
+function Convert-CodeFile-Utf8-ToSjisTemp {
+    param([string]$filePath, [string]$ext)
+    $base = [IO.Path]::GetFileNameWithoutExtension($filePath)
+    $tmp = Join-Path $env:TEMP ("VBAImport_" + [Guid]::NewGuid())
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    $tmpFile = Join-Path $tmp ($base + $ext)
+    $text = Get-Content -LiteralPath $filePath -Raw -Encoding UTF8
+    Write-SJIS -Path $tmpFile -Text $text
+    return $tmpFile
 }
 
 # .frm を UTF-8 で読み → SJIS に変換して一時パスへ
