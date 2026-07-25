@@ -90,8 +90,12 @@ function Get-ModulePublicSubs {
   try {
     $cm = Invoke-Com { $VBComponent.CodeModule }
     $lines = Invoke-Com { $cm.Lines(1, $cm.CountOfLines) }
-    # Public Sub の正規表現（引数あり/なし両対応、属性やコメントは簡易除外）
-    $regex = [regex]'(?im)^\s*Public\s+Sub\s+([A-Za-z_][A-Za-z0-9_]*)\s*(\(|$)'
+    # Public Sub の正規表現（引数あり/なし両対応、属性やコメントは簡易除外）。
+    # VBAは既定でアクセス修飾子省略時は Public 扱いになるため、"Public" 明示・省略の
+    # どちらもマッチさせる（Private/Friendは非マッチのまま除外される）。
+    # プロシージャ名は日本語等のUnicode識別子にも対応するため、ASCII限定ではなく
+    # 空白/"("以外の連続文字として扱う
+    $regex = [regex]'(?im)^\s*(?:Public\s+)?Sub\s+([^\s(]+)\s*(\(|$)'
     foreach ($m in $regex.Matches($lines)) {
       $proc = $m.Groups[1].Value
       $res += [pscustomobject]@{
