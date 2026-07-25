@@ -9,6 +9,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.36] - 2026-07-26
+### ### Fixed
+- v0.0.35's table-of-contents anchors (`<a id="...">` placed alone on the line right before each heading) broke table rendering on the Marketplace page: a standalone HTML tag like that can be parsed as an "HTML block" that continues, verbatim, until the next blank line -- swallowing the following heading and, apparently on the Marketplace renderer, everything after it, so the pipe-delimited feature tables further down showed up as raw text instead of `<table>`s. Fixed by moving each anchor inline into the same line as its heading (`## <a id="x"></a>Heading text`), which is treated as ordinary inline HTML inside a single heading line rather than a standalone HTML block.
+
 ## [0.0.35] - 2026-07-26
 ### ### Changed
 - Restructured `README.md`: it previously mixed manual-user, AI-client, and developer content in one long page. Moved the AI-client usage section into `docs/AI_USAGE.md` and the developer/build section into `docs/DEVELOPMENT.md`, with a short summary and link left in place of each. Added an in-page table of contents with anchors so readers can jump directly to the section relevant to them.

@@ -10,8 +10,7 @@
 - [⚠重要 / Important](#important)
 - [🛠 開発者向け情報 / Development](#dev)
 
-<a id="overview"></a>
-## 概要（Japanese）
+## <a id="overview"></a>概要（Japanese）
 
 **EXCEL VBA module Sync** は、開いているExcel の VBA モジュールを VSCode 上で編集するための拡張機能です。  
 VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内容のVBAへのインポートが行えます。  
@@ -66,8 +65,7 @@ Works in a Windows 10/11 + Excel + VS Code environment only.
 | Generate VBA Flow Chart (Experimental) | Create an mmd folder in the export destination and output a simple flowchart in Mermaid format (*.mmd). |
 | Command Palette / GUI support  | Use commands or side panel buttons                               | 
 ---
-<a id="install"></a>
-## 🧩 インストール（VSIX） / Install from VSIX
+## <a id="install"></a>🧩 インストール（VSIX） / Install from VSIX
 
 ### From Marketplace
 1. [Visual Studio Marketplace - excel-vba-sync](https://marketplace.visualstudio.com/items?itemName=9kv8xiyi.excel-vba-sync)  
@@ -98,8 +96,7 @@ curl.exe -sS -L -f --retry 3 --retry-delay 2 "$URL" -o "$OUT"
 code --install-extension "$OUT"
 ```
 
-<a id="ai-usage"></a>
-## 🤖 AIクライアントから使う（Claude Code / Claude Desktop） / Use from an AI client
+## <a id="ai-usage"></a>🤖 AIクライアントから使う（Claude Code / Claude Desktop） / Use from an AI client
 
 この拡張機能には[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)サーバーが内蔵されており、Claude Code・Claude Desktopなどの外部AIクライアントから、VBAコードの読み取り・検索・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます。
 
@@ -109,8 +106,7 @@ This extension has a built-in [Model Context Protocol (MCP)](https://modelcontex
 
 See **[docs/AI_USAGE.md](docs/AI_USAGE.md)** for setup steps, safety design, and known caveats.
 
-<a id="important"></a>
-## ⚠重要 / Important ##
+## <a id="important"></a>⚠重要 / Important ##
 
 > [!WARNING]
 > **EXCELファイルは必ずバックアップしてください。**
@@ -151,8 +147,7 @@ This extension is provided "as is", without warranty of any kind. The author acc
 
 ---
 
-<a id="dev"></a>
-## 🛠 開発者向け情報 / Development (for GitHub users)
+## <a id="dev"></a>🛠 開発者向け情報 / Development (for GitHub users)
 このセクションは拡張機能の利用者には不要です。拡張の開発や修正、ローカライズ設定、アーキテクチャ図は **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** を参照してください。
 
 This section is unnecessary for extension users. See **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** for build/dev setup, packaging, localization, and the architecture diagram.
