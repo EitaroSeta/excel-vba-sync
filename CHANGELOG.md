@@ -9,6 +9,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.33] - 2026-07-25
+### ### Fixed
+- Real regression found in live testing: repeated MCP-driven Excel auto-launches (from `Get-OrStartExcelApplication`) could leave an orphaned, workbook-less Excel process running. Once more than one Excel process exists, `GetActiveObject("Excel.Application")` can resolve to the wrong one -- this broke the ordinary VS Code Export command with `保存済みの Excel ブックが見つかりません` / `DISP_E_BADINDEX` errors that had nothing to do with the export logic itself, since it landed on the empty automation instance instead of the user's real session.
+
+### ### Added
+- `Get-OrStartExcelApplication` now returns `LaunchedProcessId`, populated only when it actually had to launch a new Excel instance (null when reusing one already running). This is surfaced as `launchedExcelPid` in the JSON response of every MCP tool that can trigger an auto-launch (`excel_get_module_code`, `vba_search_code`, `excel_update_module_code`, `excel_list_macros`, `excel_run_macro`), so a calling agent/user can identify -- and if needed manually clean up -- a process this tooling caused to exist, without touching an unrelated pre-existing Excel session. This is identification/groundwork only; the existing "auto-launched Excel stays open and visible" behavior is unchanged.
+
 ## [0.0.32] - 2026-07-25
 ### ### Fixed
 - `Get-ModulePublicSubs` (used by `excel_list_macros`) was missing two categories of runnable Subs: (1) Subs declared without the explicit `Public` keyword, which VBA treats as Public by default -- the common case, since most authors omit it; (2) procedures with non-ASCII names (e.g. Japanese identifiers) were matched with an ASCII-only regex and silently skipped even when correctly marked `Public`. Both are now detected correctly; `Private`/`Friend` subs remain excluded.
