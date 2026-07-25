@@ -307,7 +307,7 @@ try {
   else {
     # ˆê——o—Í
     if ($ListOutput -eq "JSON") {
-      Write-Output (ConvertTo-Json $results -Depth 5)
+      Write-Output (ConvertTo-Json @{ ok = $true; macros = $results; count = $results.Count } -Depth 6)
     } else {
       $results | Format-Table -AutoSize
     }

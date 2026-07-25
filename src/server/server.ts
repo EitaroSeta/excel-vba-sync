@@ -36,7 +36,9 @@ function dotSourceExcelUtil(): string {
   return `. '${psq(utilPath)}'`;
 }
 
-// PowerShell からの JSON 出力を見て、ERR_ プレフィックスのエラーなら isError:true として返す
+// PowerShell からの JSON 出力を見て、エラー（ERR_ プレフィックス、または ok:false）なら
+// isError:true として返す。注意: isError が立っていない（ok:true）からといって、
+// マクロが「意図した通りに」動作したことまでは保証しない（例外を投げずに完走した、という意味に過ぎない）。
 function classifyResult(outText: string): { content: { type: "text"; text: string }[]; isError?: boolean } {
   try {
     const start = Math.min(
@@ -47,9 +49,27 @@ function classifyResult(outText: string): { content: { type: "text"; text: strin
       if (payload && typeof payload.error === "string" && payload.error.startsWith("ERR_")) {
         return { content: [{ type: "text", text: outText }], isError: true };
       }
+      if (payload && payload.ok === false) {
+        return { content: [{ type: "text", text: outText }], isError: true };
+      }
     }
   } catch { /* JSON以外の出力はそのまま返す */ }
   return { content: [{ type: "text", text: outText }] };
+}
+
+// execFileAsyncが非ゼロ終了コードで失敗した場合でも、e.stdout に実際のJSON出力
+// （例: {ok:false, error:"macro not found", ...}）が残っていることが多いため、
+// "ps failed" という汎用メッセージで実際のエラー内容を握りつぶさないようにする
+function extractFailureResult(e: any): { content: { type: "text"; text: string }[]; isError: boolean } {
+  const stdout = e?.stdout;
+  if (stdout) {
+    const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+    if (outText.trim().length > 0) {
+      const classified = classifyResult(outText);
+      return { content: classified.content, isError: true };
+    }
+  }
+  return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
 }
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_get_module_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
@@ -177,6 +197,7 @@ server.tool(
     workbookPath: z.string().optional(),   // フルパス指定時、未オープンなら自動でExcelを起動・Open
     ActivateExcel: z.boolean().optional(),
     ShowStatus: z.boolean().optional(),
+    timeoutMs: z.number().optional(),      // 既定30秒。MsgBox等でExcel側が固まった場合にこちらの待ちを打ち切る
   },
   async (params) => {
     const ps = process.env.MCP_PS_RUN || process.env.MCP_PS_LIST;
@@ -224,17 +245,31 @@ server.tool(
       args.push("-ShowStatus");
     }
 
+    const timeoutMs = params.timeoutMs ?? 30000;
     try {
       const { stdout } = await execFileAsync("powershell.exe", args, {
         windowsHide: true ,
         encoding: "buffer",
         maxBuffer: 2 * 1024 * 1024,
-        cwd: path.dirname(ps)
+        cwd: path.dirname(ps),
+        timeout: timeoutMs,
     });
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
       return classifyResult(outText);
     } catch (e: any) {
-      return { content: [{ type: "text", text: JSON.stringify({ error: "ps failed", detail: String(e?.message ?? e) }) }] };
+      // execFileAsyncのtimeoutで強制終了された場合。ただしこちら側のPowerShellプロセスを
+      // 止めるだけで、Excel自体やダイアログで止まっている状態は解消されない点に注意。
+      if (e?.killed) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({
+            ok: false,
+            error: "ERR_TIMEOUT",
+            detail: `Macro execution timed out after ${timeoutMs}ms. Excel may be blocked on a dialog (MsgBox/InputBox) or still running -- please check Excel directly.`,
+          }) }],
+          isError: true,
+        };
+      }
+      return extractFailureResult(e);
     }
   }
 );
@@ -248,12 +283,14 @@ server.tool(
     workbookFilter: z.string().optional(),
     useRegex: z.boolean().optional(),
     workbookPath: z.string().optional(),
+    maxResults: z.number().optional(),     // 既定50件。超過時は truncated:true で通知
   },
   async (params) => {
     // PowerShellワンライナーで開いている全ブックの全モジュールを走査
     // ・TrustOM 必須（VBAプロジェクトOMへのアクセスを信頼）
     // ・全コンポーネント種別を対象 vbext_ct_StdModule(1), Class(2), Document(100)
     const wbPath = psq(params.workbookPath ?? "");
+    const maxResults = params.maxResults ?? 50;
     const dotSource = dotSourceExcelUtil();
     const psScript = `
 # --- Force UTF-8 (no BOM) for stdout/stderr ---
@@ -361,7 +398,14 @@ foreach($wb in @($excel.Workbooks)){
     }catch{}
   }
 }
-@{ ok=$true; query=$reRaw; hits=$hits; count=$hits.Count } | ConvertTo-Json -Depth 6
+$totalMatchCount = $hits.Count
+$truncated = $false
+$maxResultsParam = ${maxResults}
+if ($totalMatchCount -gt $maxResultsParam) {
+  $hits = $hits[0..($maxResultsParam - 1)]
+  $truncated = $true
+}
+@{ ok=$true; query=$reRaw; hits=$hits; count=$hits.Count; totalMatchCount=$totalMatchCount; truncated=$truncated } | ConvertTo-Json -Depth 6
 `;
 
     try {
@@ -371,10 +415,9 @@ foreach($wb in @($excel.Workbooks)){
         { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2*1024*1024 }
       );
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
-      //return { content: [{ type: "text", text: stdout }] };
-      return { content: [{ type: "text", text: outText }] };
+      return classifyResult(outText);
     } catch (e:any) {
-      return { content: [{ type: "text", text: JSON.stringify({ ok:false, error:"ps_failed", detail:String(e?.message ?? e) }) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ ok:false, error:"ps_failed", detail:String(e?.message ?? e) }) }], isError: true };
     }
   }
 );
@@ -523,7 +566,7 @@ try {
       const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
       return classifyResult(outText);
     } catch (e: any) {
-      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
+      return extractFailureResult(e);
     } finally {
       try { fs.unlinkSync(tmpFile); } catch { /* noop */ }
     }
