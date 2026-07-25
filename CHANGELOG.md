@@ -9,6 +9,14 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.35] - 2026-07-26
+### ### Changed
+- Restructured `README.md`: it previously mixed manual-user, AI-client, and developer content in one long page. Moved the AI-client usage section into `docs/AI_USAGE.md` and the developer/build section into `docs/DEVELOPMENT.md`, with a short summary and link left in place of each. Added an in-page table of contents with anchors so readers can jump directly to the section relevant to them.
+- Strengthened the Excel backup warning: moved it to the top of the Important section as a GitHub-flavored-markdown alert (renders as a colored warning box on GitHub), and added an explicit note that the risk of unintended overwrite/execution is higher than normal when an AI agent is driving the tools autonomously via MCP (no per-step human confirmation).
+
+### ### Added
+- Added a Disclaimer section covering damage from use of the extension, including actions taken by an AI agent via the MCP server.
+
 ## [0.0.34] - 2026-07-25
 ### ### Fixed
 - v0.0.33's published VSIX unintentionally bundled `.mcp.json` (a machine-specific MCP config containing the developer's local Windows username and folder paths), plus internal working files `BRUSHUP_NOTES.md` and `brushup_changes.diff`. Root cause: `.gitignore` only keeps files out of git, not out of the packaged VSIX -- that requires `.vscodeignore`, which these files were missing from. Added them (along with `.claude/` and `.github/`) to `.vscodeignore`; no functional code changes in this release.
