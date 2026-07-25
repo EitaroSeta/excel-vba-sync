@@ -9,6 +9,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.37] - 2026-07-26
+### ### Fixed
+- Fixed a Mermaid parse error in `docs/DEVELOPMENT.md`'s architecture diagram: the `PS` node was written as `PS ["PowerShell Scripts(.ps1)"]` (a stray space between the node ID and its label brackets), which the Mermaid grammar does not allow -- GitHub showed "Unable to render rich display / Parse error on line 4" instead of the diagram. This typo predates the recent README split and was simply never noticed until now. Fixed to `PS["PowerShell Scripts(.ps1)"]`, matching the other three nodes.
+
 ## [0.0.36] - 2026-07-26
 ### ### Fixed
 - v0.0.35's table-of-contents anchors (`<a id="...">` placed alone on the line right before each heading) broke table rendering on the Marketplace page: a standalone HTML tag like that can be parsed as an "HTML block" that continues, verbatim, until the next blank line -- swallowing the following heading and, apparently on the Marketplace renderer, everything after it, so the pipe-delimited feature tables further down showed up as raw text instead of `<table>`s. Fixed by moving each anchor inline into the same line as its heading (`## <a id="x"></a>Heading text`), which is treated as ordinary inline HTML inside a single heading line rather than a standalone HTML block.

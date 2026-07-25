@@ -53,7 +53,7 @@ v.0.0.27の機能追加にて、VS Code (`extension.ts`) から Node.js サー�
 flowchart LR
   EXT["extension.ts(VS Code Extension)"]
   SRV["server.ts   (Node MCP-like server)"]
-  PS ["PowerShell Scripts(.ps1)"]
+  PS["PowerShell Scripts(.ps1)"]
   XLS["Excel COM   (VBA Project/Modules)"]
 
   EXT -- JSON-RPC (stdio) --> SRV
