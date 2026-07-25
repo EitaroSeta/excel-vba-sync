@@ -73,6 +73,10 @@ param(
   [string]$BasPath,
 
   [Parameter(ParameterSetName='ByName')]
+  [Parameter(ParameterSetName='ByQualified')]
+  [string]$WorkbookPath,   # 指定時、未オープンなら自動でExcelを起動・当該ブックをOpenする
+
+  [Parameter(ParameterSetName='ByName')]
   [ValidateSet("JSON")]
   [string]$ListOutput = "JSON",
 
@@ -154,11 +158,27 @@ if (-not ("Microsoft.VisualBasic.Interaction" -as [type])) {
   Add-Type -AssemblyName Microsoft.VisualBasic
 }
 
+# このツール呼び出しでExcelを新規起動していた場合、そのPIDを結果に含めるためのヘルパー
+$script:launchedExcelPid = $null
+function Add-LaunchedPid {
+  param([hashtable]$Result)
+  if ($script:launchedExcelPid) { $Result["launchedExcelPid"] = $script:launchedExcelPid }
+  return $Result
+}
+
 # === メイン処理 ===
 [MessageFilter]::Register()
 try {
-  $excel = Get-ExcelSafe
+  $excelInfo = Get-OrStartExcelApplication
+  $excel = $excelInfo.App
+  $script:launchedExcelPid = $excelInfo.LaunchedProcessId
   Wait-ExcelReady -App $excel
+
+  $targetWb = $null
+  if ($WorkbookPath) {
+    $targetWb = Resolve-TargetWorkbook -App $excel -WorkbookPath $WorkbookPath
+    Test-VbaTrustAccess -Workbook $targetWb | Out-Null
+  }
 
   # Qualified指定を判定して実行
   if (-not [string]::IsNullOrWhiteSpace($Qualified)) {
@@ -173,19 +193,18 @@ try {
     try {
       Wait-ExcelReady -App $excel
       Invoke-Com { $excel.Run($Qualified) } | Out-Null
-      Write-Output (ConvertTo-Json @{ ok = $true; ran = $Qualified } -Depth 5)
+      Write-Output (ConvertTo-Json (Add-LaunchedPid @{ ok = $true; ran = $Qualified }) -Depth 5)
       return
   #    exit 0
     } catch {
-      Write-Output (ConvertTo-Json @{ ok = $false; ran = $Qualified; lastError = "$($_.Exception.Message)" } -Depth 8)
+      Write-Output (ConvertTo-Json (Add-LaunchedPid @{ ok = $false; ran = $Qualified; lastError = "$($_.Exception.Message)" }) -Depth 8)
       return
   #    exit 0
     }
   }
 
-  # BasPath 一致でブックを特定できるなら優先
-  $targetWb = $null
-  if ($BasPath) {
+  # BasPath 一致でブックを特定できるなら優先（WorkbookPathで既に特定済みならそちらを優先）
+  if (-not $targetWb -and $BasPath) {
     $targetWb = Find-DetectWorkbookByBas -Excel $excel -ModuleName $ModuleName -BasPath $BasPath
   }
 
@@ -209,7 +228,7 @@ try {
   if ($ProcName) {
     # 実行要求
     if (-not $results -or -not ($results | Where-Object { $_.Proc -eq $ProcName })) {
-      Write-Output ("{0}" -f (ConvertTo-Json @{ error="macro not found"; module=$ModuleName; proc=$ProcName; count=$results.Count } -Depth 5))
+      Write-Output ("{0}" -f (ConvertTo-Json (Add-LaunchedPid @{ error="macro not found"; module=$ModuleName; proc=$ProcName; count=$results.Count }) -Depth 5))
       exit 1
     }
 
@@ -222,7 +241,7 @@ try {
     }
 
     if (-not $filtered -or $filtered.Count -eq 0) {
-        Write-Output (ConvertTo-Json @{ ok=$false; error="macro not found"; module=$ModuleName; proc=$ProcName; workbook=$WorkbookName; count=$results.Count } -Depth 6)
+        Write-Output (ConvertTo-Json (Add-LaunchedPid @{ ok=$false; error="macro not found"; module=$ModuleName; proc=$ProcName; workbook=$WorkbookName; count=$results.Count }) -Depth 6)
         exit 0
     }
 
@@ -291,14 +310,14 @@ try {
       } catch {}
     }
     
-    Write-Output (ConvertTo-Json $result -Depth 8)
+    Write-Output (ConvertTo-Json (Add-LaunchedPid $result) -Depth 8)
     exit 0   # ★ 失敗でも 0 で終了（Node 側で JSON を必ず受け取れる）
 
   }
   else {
     # 一覧出力
     if ($ListOutput -eq "JSON") {
-      Write-Output (ConvertTo-Json $results -Depth 5)
+      Write-Output (ConvertTo-Json (Add-LaunchedPid @{ ok = $true; macros = $results; count = $results.Count }) -Depth 6)
     } else {
       $results | Format-Table -AutoSize
     }

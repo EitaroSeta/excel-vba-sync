@@ -2,7 +2,7 @@
     "name": "excel-vba-sync",
     "displayName": "excel-vba-sync",
     "description": "Export VBA modules to VSCode & import them back to Excel.",
-    "version": "0.0.30",
+    "version": "0.0.33",
     "publisher": "9kv8xiyi",
     "license": "MIT",
     "author": {
@@ -118,6 +118,10 @@
             {
                 "command": "vbaMcp.listAndRunMacro",
                 "title": "Excel VBA: List & Run Macro"
+            },
+            {
+                "command": "excel-vba-sync.printMcpConfig",
+                "title": "Excel VBA: Print MCP Server Config (for AI)"
             }
         ],
         "menus": {
@@ -196,7 +200,7 @@
         "vscode:prepublish": "npm run build",
         "build": "npm run compile && npm run build:server",
         "compile": "tsc -p ./",
-        "build:server": "tsc -p src/server/tsconfig.server.json",
+        "build:server": "tsc -p src/server",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src",

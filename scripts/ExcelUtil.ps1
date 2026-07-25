@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 public static class User32 {
   [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 }
 "@
 
@@ -90,8 +91,12 @@ function Get-ModulePublicSubs {
   try {
     $cm = Invoke-Com { $VBComponent.CodeModule }
     $lines = Invoke-Com { $cm.Lines(1, $cm.CountOfLines) }
-    # Public Sub の正規表現（引数あり/なし両対応、属性やコメントは簡易除外）
-    $regex = [regex]'(?im)^\s*Public\s+Sub\s+([A-Za-z_][A-Za-z0-9_]*)\s*(\(|$)'
+    # Public Sub の正規表現（引数あり/なし両対応、属性やコメントは簡易除外）。
+    # VBAは既定でアクセス修飾子省略時は Public 扱いになるため、"Public" 明示・省略の
+    # どちらもマッチさせる（Private/Friendは非マッチのまま除外される）。
+    # プロシージャ名は日本語等のUnicode識別子にも対応するため、ASCII限定ではなく
+    # 空白/"("以外の連続文字として扱う
+    $regex = [regex]'(?im)^\s*(?:Public\s+)?Sub\s+([^\s(]+)\s*(\(|$)'
     foreach ($m in $regex.Matches($lines)) {
       $proc = $m.Groups[1].Value
       $res += [pscustomobject]@{
@@ -174,4 +179,67 @@ function Find-DetectWorkbookByBas {
 
   if ($candidates.Count -eq 1) { return $candidates[0] }
   return $null
+}
+
+# Excelアプリケーションを取得。起動していなければ新規起動してフォールバックする
+# 戻り値: @{ App = <Excel.Application>; WasAlreadyRunning = <bool>; LaunchedProcessId = <int?> }
+# LaunchedProcessId は「このツールがこの呼び出しで新規起動したExcelプロセスのPID」。
+# WasAlreadyRunning=$true（既存インスタンスを再利用）の場合は $null。
+# 呼び出し側は、複数Excelプロセス並存時のGetActiveObjectの不定挙動を避けるため、
+# 用が済んだこのPIDを識別・後始末（手動/将来の自動クリーンアップ）する手掛かりに使える。
+function Get-OrStartExcelApplication {
+  param([int]$MaxTry = 5, [int]$DelayMs = 200)
+  try {
+    $app = Get-ExcelSafe -MaxTry $MaxTry -DelayMs $DelayMs
+    return [pscustomobject]@{ App = $app; WasAlreadyRunning = $true; LaunchedProcessId = $null }
+  } catch {
+    $app = New-Object -ComObject Excel.Application
+    $app.Visible = $true
+    Wait-ExcelReady -App $app
+    $launchedPid = $null
+    try {
+      [uint32]$outProcId = 0
+      [void][User32]::GetWindowThreadProcessId([IntPtr]$app.Hwnd, [ref]$outProcId)
+      if ($outProcId -ne 0) { $launchedPid = [int]$outProcId }
+    } catch {}
+    return [pscustomobject]@{ App = $app; WasAlreadyRunning = $false; LaunchedProcessId = $launchedPid }
+  }
+}
+
+# ワークブックをフルパスまたは名前で解決する。パス指定時、未オープンならOpenする
+function Resolve-TargetWorkbook {
+  param(
+    [Parameter(Mandatory=$true)][object]$App,
+    [string]$WorkbookPath,
+    [string]$WorkbookName
+  )
+  if ($WorkbookPath -and (Test-Path -LiteralPath $WorkbookPath)) {
+    $fullPath = (Resolve-Path -LiteralPath $WorkbookPath).ProviderPath
+    foreach ($wb in @($App.Workbooks)) {
+      try { if ($wb.FullName -ieq $fullPath) { return $wb } } catch {}
+    }
+    # 未オープンなら開く
+    return $App.Workbooks.Open($fullPath)
+  }
+
+  if ($WorkbookName) {
+    $wantName = Set-WorkbookName $WorkbookName
+    foreach ($wb in @($App.Workbooks)) {
+      $currName = Set-WorkbookName $wb.Name
+      if ($currName -ieq $wantName) { return $wb }
+    }
+  }
+
+  throw "ERR_WORKBOOK_NOT_FOUND: workbook not found (path='$WorkbookPath', name='$WorkbookName')"
+}
+
+# Trust Center「VBAプロジェクトオブジェクトモデルへのアクセスを信頼する」が有効か確認する
+function Test-VbaTrustAccess {
+  param([Parameter(Mandatory=$true)][object]$Workbook)
+  try {
+    $null = $Workbook.VBProject.VBComponents.Count
+    return $true
+  } catch {
+    throw "ERR_VBOM_TRUST_DISABLED: Trust access to the VBA project object model is disabled. Enable it via Excel Options > Trust Center > Trust Center Settings > Macro Settings > 'Trust access to the VBA project object model', then retry."
+  }
 }

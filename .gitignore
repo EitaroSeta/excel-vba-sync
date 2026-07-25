@@ -142,9 +142,13 @@ vite.config.ts.timestamp-*
 node_modules/
 out/
 dist/
+dist-server/
 coverage/
 *.log
 *.tsbuildinfo
+
+# MCP server config (machine-specific absolute paths)
+.mcp.json
 
 # VS Code
 .vscode/

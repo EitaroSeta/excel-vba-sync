@@ -5,12 +5,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
+import { createHash } from "node:crypto";
 const execFileAsync = promisify(execFile);
 
 console.log("# vba-excel-mcp server: booting...");
 
 const server = new McpServer({ name: "vba-excel-mcp", version: "0.1.0" });
-server.tool("ping", {}, async () => ({ content: [{ type: "text", text: "pong" }] }));
+server.tool("ping", "Health check for the excel-vba-sync MCP server. Returns the literal string 'pong' if the server process is reachable. Does not touch Excel.", {}, async () => ({ content: [{ type: "text", text: "pong" }] }));
 
 const transport = new StdioServerTransport();
 server.connect(transport);
@@ -18,16 +20,72 @@ server.connect(transport);
 // 文字列の ' をエスケープ
 function psq(s: string) { return s.replace(/'/g, "''"); }
 
+// scripts/ フォルダの絶対パス（MCP_SCRIPTS_DIR優先、無ければ MCP_PS_LIST から逆算）
+function getScriptsDir(): string | undefined {
+  if (process.env.MCP_SCRIPTS_DIR) { return process.env.MCP_SCRIPTS_DIR; }
+  if (process.env.MCP_PS_LIST) { return path.dirname(process.env.MCP_PS_LIST); }
+  return undefined;
+}
+
+// ExcelUtil.ps1 を dot-source する行を生成（見つからない場合は空文字＝スキップ）
+function dotSourceExcelUtil(): string {
+  const dir = getScriptsDir();
+  if (!dir) { return ""; }
+  const utilPath = path.join(dir, "ExcelUtil.ps1");
+  if (!fs.existsSync(utilPath)) { return ""; }
+  return `. '${psq(utilPath)}'`;
+}
+
+// PowerShell からの JSON 出力を見て、エラー（ERR_ プレフィックス、または ok:false）なら
+// isError:true として返す。注意: isError が立っていない（ok:true）からといって、
+// マクロが「意図した通りに」動作したことまでは保証しない（例外を投げずに完走した、という意味に過ぎない）。
+function classifyResult(outText: string): { content: { type: "text"; text: string }[]; isError?: boolean } {
+  try {
+    const start = Math.min(
+      ...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; })
+    );
+    if (Number.isFinite(start)) {
+      const payload = JSON.parse(outText.slice(start));
+      if (payload && typeof payload.error === "string" && payload.error.startsWith("ERR_")) {
+        return { content: [{ type: "text", text: outText }], isError: true };
+      }
+      if (payload && payload.ok === false) {
+        return { content: [{ type: "text", text: outText }], isError: true };
+      }
+    }
+  } catch { /* JSON以外の出力はそのまま返す */ }
+  return { content: [{ type: "text", text: outText }] };
+}
+
+// execFileAsyncが非ゼロ終了コードで失敗した場合でも、e.stdout に実際のJSON出力
+// （例: {ok:false, error:"macro not found", ...}）が残っていることが多いため、
+// "ps failed" という汎用メッセージで実際のエラー内容を握りつぶさないようにする
+function extractFailureResult(e: any): { content: { type: "text"; text: string }[]; isError: boolean } {
+  const stdout = e?.stdout;
+  if (stdout) {
+    const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+    if (outText.trim().length > 0) {
+      const classified = classifyResult(outText);
+      return { content: classified.content, isError: true };
+    }
+  }
+  return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
+}
+
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_get_module_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_get_module_code",
+  "Read the full source code of a VBA module (all Sub/Function bodies as VBE would show them; module- and procedure-level Attribute lines, e.g. macro shortcut key bindings, are NOT included -- this reads via CodeModule.Lines()). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off (cannot be enabled programmatically).",
   {
-    workbook: z.string(),
-    module: z.string(),
+    workbook: z.string().describe("Workbook display name, e.g. 'Book1.xlsm'. Must match an already-open workbook unless workbookPath is also given."),
+    module: z.string().describe("VBA module name (e.g. 'Module1', 'Sheet1', 'ThisWorkbook')."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed, instead of requiring it to already be open."),
   },
   async (params) => {
     const wb = psq(params.workbook);
     const mod = psq(params.module);
+    const wbPath = psq(params.workbookPath ?? "");
+    const dotSource = dotSourceExcelUtil();
 
     // PowerShell ワンライナーで COM 経由取得
     const psScript = `
@@ -36,11 +94,16 @@ $ErrorActionPreference='Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding           = [Console]::OutputEncoding
 
-try { $excel=[Runtime.InteropServices.Marshal]::GetActiveObject('Excel.Application') }
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
 catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
 
-$wb=$excel.Workbooks | Where-Object { $_.Name -eq '${wb}' }
-if(-not $wb){ @{ ok=$false; error='workbook_not_found'; workbook='${wb}' } | ConvertTo-Json ; exit }
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { Test-VbaTrustAccess -Workbook $wb | Out-Null }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
 
 try { $vbc=$wb.VBProject.VBComponents.Item('${mod}') }
 catch { @{ ok=$false; error='module_not_found'; module='${mod}' } | ConvertTo-Json ; exit }
@@ -48,7 +111,9 @@ catch { @{ ok=$false; error='module_not_found'; module='${mod}' } | ConvertTo-Js
 try {
   $cm=$vbc.CodeModule
   $code=$cm.Lines(1, $cm.CountOfLines)
-  @{ ok=$true; workbook=$wb.Name; module=$vbc.Name; lines=$cm.CountOfLines; code=$code } | ConvertTo-Json -Depth 6
+  $res = @{ ok=$true; workbook=$wb.Name; module=$vbc.Name; lines=$cm.CountOfLines; code=$code }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 6
 } catch {
   @{ ok=$false; error='read_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
 }
@@ -60,15 +125,13 @@ try {
         ["-NoLogo","-NoProfile","-NonInteractive","-STA","-ExecutionPolicy","Bypass","-Command", psScript],
         {
           windowsHide: true,
-          encoding: "buffer",    
+          encoding: "buffer",
           timeout: 20000,
           maxBuffer: 2 * 1024 * 1024,
         }
       );
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
-      //const errText  = Buffer.isBuffer(stderr) ? stderr.toString("utf8") : String(stderr);
-      //return { content: [{ type: "text", text: stdout }] };
-      return { content: [{ type: "text", text: outText }] };
+      return classifyResult(outText);
     } catch (e: any) {
       return { content: [{ type: "text", text: JSON.stringify({ ok:false, error:"ps_failed", detail:String(e?.message ?? e) }) }] };
     }
@@ -78,9 +141,11 @@ try {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_macros ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_list_macros",
+  "List runnable procedures (Subs; module-level Public or implicitly-public -- Private/Friend are excluded, and Functions are not listed) in a VBA module, each with a fully-qualified name usable directly as the 'qualified' argument to excel_run_macro. Scans all currently open workbooks for a module with this name unless workbookPath narrows it to one specific file (auto-launching/opening it if needed).",
   {
-    moduleName: z.string(),
-    basPath: z.string().optional(),
+    moduleName: z.string().describe("VBA module name to enumerate procedures in."),
+    basPath: z.string().optional().describe("Optional: full path to a previously-exported .bas file for this module; if given, its content hash is used to disambiguate which open workbook to target when multiple books have a same-named module."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed, instead of requiring it to already be open."),
   },
   async (params) => {
     const ps = process.env.MCP_PS_LIST;
@@ -95,7 +160,7 @@ server.tool(
       "-NoLogo",
       "-NoProfile",
       "-NonInteractive",
-      "-STA",  
+      "-STA",
       "-ExecutionPolicy", "Bypass",
       "-File", ps,
       "-ModuleName", params.moduleName,
@@ -104,9 +169,12 @@ server.tool(
     if (params.basPath) {
         args.push("-BasPath", params.basPath);
     }
+    if (params.workbookPath) {
+        args.push("-WorkbookPath", params.workbookPath);
+    }
 
     try {
-      const { stdout } = await execFileAsync("powershell.exe", args, { 
+      const { stdout } = await execFileAsync("powershell.exe", args, {
         windowsHide: true,
         encoding: "buffer",      // Buffer で受け取ってから UTF-8 に変換
         cwd: path.dirname(ps),   // ps1 のあるフォルダをカレントに
@@ -114,8 +182,7 @@ server.tool(
         maxBuffer: 2 * 1024 * 1024
       });
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
-      //return { content: [{ type: "text", text: stdout }] };
-      return { content: [{ type: "text", text: outText }] };
+      return classifyResult(outText);
     } catch (e: any) {
       return { content: [{ type: "text", text: JSON.stringify({ error: "ps failed", detail: String(e?.message ?? e) }) }] };
     }
@@ -125,14 +192,17 @@ server.tool(
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_run_macros ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_run_macro",
+  "Run a VBA macro via Application.Run. WARNING: if the macro shows a dialog (MsgBox, InputBox) or a UserForm, or otherwise waits for user interaction, this call will hang until timeoutMs is reached; the timeout only stops this tool's own wait -- it does NOT close the dialog or unstick Excel, so check Excel directly afterward if you hit ERR_TIMEOUT. IMPORTANT: a successful response only means Application.Run completed without throwing an exception -- it does NOT confirm the macro did the intended thing (cell writes, files written, etc. are not verified by this tool). Prefer excel_list_macros first to get an exact 'qualified' name rather than guessing moduleName/procName.",
   {
-    qualified: z.string().optional(),      // 例："'Book1.xlsm'!Module1.aaa"（最優先）
-    moduleName: z.string().optional(),     // qualified が無い場合に使用
-    procName: z.string().optional(),       // qualified が無い場合に使用
-    workbookName: z.string().optional(),   // 同名対策で限定したい場合に使用（.ps1 側で対応していれば）
-    basPath: z.string().optional(),        // 内容一致で限定する場合
-    ActivateExcel: z.boolean().optional(),
-    ShowStatus: z.boolean().optional(),
+    qualified: z.string().optional().describe("Fully-qualified macro name, e.g. \"'Book1.xlsm'!Module1.DoWork\" (as returned by excel_list_macros). Takes priority over moduleName/procName if both are given."),
+    moduleName: z.string().optional().describe("Module name. Required together with procName if 'qualified' is not given."),
+    procName: z.string().optional().describe("Procedure (Sub) name within moduleName. Required together with moduleName if 'qualified' is not given."),
+    workbookName: z.string().optional().describe("Optional: display name of the workbook to disambiguate when the same module/proc name exists in multiple open workbooks."),
+    basPath: z.string().optional().describe("Optional: full path to a previously-exported .bas file; its content hash disambiguates which open workbook to target."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed, instead of requiring it to already be open."),
+    ActivateExcel: z.boolean().optional().describe("Bring the Excel window to the foreground before running."),
+    ShowStatus: z.boolean().optional().describe("Show a transient message in Excel's status bar while/after running."),
+    timeoutMs: z.number().optional().describe("Milliseconds to wait before giving up and returning ERR_TIMEOUT. Default 30000. Does not stop Excel itself if it's blocked on a dialog."),
   },
   async (params) => {
     const ps = process.env.MCP_PS_RUN || process.env.MCP_PS_LIST;
@@ -170,6 +240,9 @@ server.tool(
       }
     }
 
+    if (params.workbookPath) {
+      args.push("-WorkbookPath", params.workbookPath);
+    }
     if (params.ActivateExcel) {
       args.push("-ActivateExcel");
     }
@@ -177,18 +250,31 @@ server.tool(
       args.push("-ShowStatus");
     }
 
+    const timeoutMs = params.timeoutMs ?? 30000;
     try {
-      const { stdout } = await execFileAsync("powershell.exe", args, { 
+      const { stdout } = await execFileAsync("powershell.exe", args, {
         windowsHide: true ,
-        encoding: "buffer",  
+        encoding: "buffer",
         maxBuffer: 2 * 1024 * 1024,
-        cwd: path.dirname(ps)
+        cwd: path.dirname(ps),
+        timeout: timeoutMs,
     });
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
-      //return { content: [{ type: "text", text: stdout }] };
-      return { content: [{ type: "text", text: outText }] };
+      return classifyResult(outText);
     } catch (e: any) {
-      return { content: [{ type: "text", text: JSON.stringify({ error: "ps failed", detail: String(e?.message ?? e) }) }] };
+      // execFileAsyncのtimeoutで強制終了された場合。ただしこちら側のPowerShellプロセスを
+      // 止めるだけで、Excel自体やダイアログで止まっている状態は解消されない点に注意。
+      if (e?.killed) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({
+            ok: false,
+            error: "ERR_TIMEOUT",
+            detail: `Macro execution timed out after ${timeoutMs}ms. Excel may be blocked on a dialog (MsgBox/InputBox) or still running -- please check Excel directly.`,
+          }) }],
+          isError: true,
+        };
+      }
+      return extractFailureResult(e);
     }
   }
 );
@@ -196,27 +282,48 @@ server.tool(
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ vba_search_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "vba_search_code",
+  "Search VBA source code for a literal string or regex across all currently open workbooks (or one specific workbook via workbookPath / workbookFilter). Returns matching LINES with context (workbook/module/proc/line number), not full module code -- use excel_get_module_code to read a whole module. Results are capped at maxResults (default 50); if there were more matches, the response sets truncated:true and totalMatchCount so you know to narrow the query rather than assuming there were no more hits.",
   {
-    query: z.string(),
-    moduleFilter: z.string().optional(),
-    workbookFilter: z.string().optional(),
-    useRegex: z.boolean().optional(),
+    query: z.string().describe("Search text. Plain substring by default, or a .NET regex pattern if useRegex is true. Case-insensitive."),
+    moduleFilter: z.string().optional().describe("Restrict the search to a single module name."),
+    workbookFilter: z.string().optional().describe("Restrict the search to a single open workbook's display name."),
+    useRegex: z.boolean().optional().describe("Treat 'query' as a .NET regular expression instead of a literal substring."),
+    workbookPath: z.string().optional().describe("Full path to a workbook to include in the search. If set and not already open, Excel is auto-launched and the file auto-opened before searching."),
+    maxResults: z.number().optional().describe("Maximum number of hits to return in one call. Default 50. Excess hits are dropped, with truncated:true and totalMatchCount reported instead."),
   },
   async (params) => {
     // PowerShellワンライナーで開いている全ブックの全モジュールを走査
     // ・TrustOM 必須（VBAプロジェクトOMへのアクセスを信頼）
     // ・全コンポーネント種別を対象 vbext_ct_StdModule(1), Class(2), Document(100)
+    const wbPath = psq(params.workbookPath ?? "");
+    const maxResults = params.maxResults ?? 50;
+    const dotSource = dotSourceExcelUtil();
     const psScript = `
 # --- Force UTF-8 (no BOM) for stdout/stderr ---
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding           = [Console]::OutputEncoding
 
+${dotSource}
+
 $ErrorActionPreference='Stop'
 try{
-  $excel=[Runtime.InteropServices.Marshal]::GetActiveObject('Excel.Application')
-}catch{ 
-  Write-Output (@{ ok=$false; error='excel_not_found' } | ConvertTo-Json); exit 
+  $r = Get-OrStartExcelApplication
+  $excel = $r.App
+}catch{
+  Write-Output (@{ ok=$false; error='excel_not_found' } | ConvertTo-Json); exit
 }
+
+# workbookPath指定時は、未オープンなら自動で開く（対象を明示検索対象に含めるため）
+$workbookPathParam = '${wbPath}'
+if ($workbookPathParam -and $workbookPathParam.Trim().Length -gt 0) {
+  try {
+    $targetWb = Resolve-TargetWorkbook -App $excel -WorkbookPath $workbookPathParam
+    Test-VbaTrustAccess -Workbook $targetWb | Out-Null
+  } catch {
+    Write-Output (@{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json); exit
+  }
+}
+
 $hits=@()
 $reRaw=${JSON.stringify(params.query)}
 $useRe=${params.useRegex ? '$true' : '$false'}
@@ -297,7 +404,16 @@ foreach($wb in @($excel.Workbooks)){
     }catch{}
   }
 }
-@{ ok=$true; query=$reRaw; hits=$hits; count=$hits.Count } | ConvertTo-Json -Depth 6
+$totalMatchCount = $hits.Count
+$truncated = $false
+$maxResultsParam = ${maxResults}
+if ($totalMatchCount -gt $maxResultsParam) {
+  $hits = $hits[0..($maxResultsParam - 1)]
+  $truncated = $true
+}
+$searchRes = @{ ok=$true; query=$reRaw; hits=$hits; count=$hits.Count; totalMatchCount=$totalMatchCount; truncated=$truncated }
+if ($r.LaunchedProcessId) { $searchRes.launchedExcelPid = $r.LaunchedProcessId }
+$searchRes | ConvertTo-Json -Depth 6
 `;
 
     try {
@@ -307,10 +423,164 @@ foreach($wb in @($excel.Workbooks)){
         { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2*1024*1024 }
       );
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
-      //return { content: [{ type: "text", text: stdout }] };
-      return { content: [{ type: "text", text: outText }] };
+      return classifyResult(outText);
     } catch (e:any) {
-      return { content: [{ type: "text", text: JSON.stringify({ ok:false, error:"ps_failed", detail:String(e?.message ?? e) }) }] };
+      return { content: [{ type: "text", text: JSON.stringify({ ok:false, error:"ps_failed", detail:String(e?.message ?? e) }) }], isError: true };
+    }
+  }
+);
+
+// ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_update_module_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+// dry-run（プレビュー）→ confirmToken付き呼び出し（実書き込み）の2段階フロー。
+// 実際の書き込みは import_single_module.ps1 経由（= import_opened_vba.ps1 の
+// VBComponents.Import()ベースのロジックを再利用）で行い、CodeModule.AddFromString()を
+// 直接呼ぶことは絶対に行わない（Attribute行を含むコードでコンパイルエラーになるため）。
+function computeConfirmToken(workbook: string, module: string, newCode: string): string {
+  return createHash("sha256").update(`${workbook}\u0000${module}\u0000${newCode}`).digest("hex").slice(0, 16);
+}
+
+server.tool(
+  "excel_update_module_code",
+  "Overwrite the code of an EXISTING VBA module (cannot create new modules, and cannot target .frm UserForm modules -- fails with ERR_UNSUPPORTED_MODULE_TYPE). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    module: z.string().describe("Name of an EXISTING VBA module to overwrite. New modules cannot be created via this tool."),
+    newCode: z.string().describe("Full replacement source code for the module (procedure bodies only -- do not include Attribute lines)."),
+    dryRun: z.boolean().optional().describe("If true, only preview the change (current vs new code) and return a confirmToken; does not write anything."),
+    confirmToken: z.string().optional().describe("Token obtained from a prior dryRun:true call with the identical workbook/module/newCode. Required to actually perform the write."),
+  },
+  async (params) => {
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const mod = psq(params.module);
+
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+
+    const expectedToken = computeConfirmToken(params.workbook ?? params.workbookPath ?? "", params.module, params.newCode);
+
+    // --- dry-run: 現在のコードを読み取り、差分プレビューと確認トークンを返すだけ。書き込みは行わない ---
+    if (params.dryRun) {
+      const dotSource = dotSourceExcelUtil();
+      const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { Test-VbaTrustAccess -Workbook $wb | Out-Null }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { $vbc=$wb.VBProject.VBComponents.Item('${mod}') }
+catch { @{ ok=$false; error='module_not_found'; module='${mod}' } | ConvertTo-Json ; exit }
+
+try {
+  $cm=$vbc.CodeModule
+  $code = if ($cm.CountOfLines -gt 0) { $cm.Lines(1, $cm.CountOfLines) } else { "" }
+  $dryRunRes = @{ ok=$true; workbook=$wb.Name; module=$vbc.Name; componentType=$vbc.Type; currentCode=$code }
+  if ($r.LaunchedProcessId) { $dryRunRes.launchedExcelPid = $r.LaunchedProcessId }
+  $dryRunRes | ConvertTo-Json -Depth 6
+} catch {
+  @{ ok=$false; error='read_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+      try {
+        const { stdout } = await execFileAsync(
+          "powershell.exe",
+          ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+          { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2 * 1024 * 1024 }
+        );
+        const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+        const classified = classifyResult(outText);
+        if (classified.isError) { return classified; }
+
+        let payload: any = null;
+        try {
+          const start = Math.min(...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; }));
+          payload = Number.isFinite(start) ? JSON.parse(outText.slice(start)) : null;
+        } catch { /* noop */ }
+
+        if (!payload?.ok) {
+          return { content: [{ type: "text", text: outText }], isError: true };
+        }
+
+        const preview: Record<string, unknown> = {
+          ok: true,
+          workbook: payload.workbook,
+          module: payload.module,
+          componentType: payload.componentType,
+          currentCode: payload.currentCode,
+          newCode: params.newCode,
+          willLoseShortcutAttributes: payload.componentType === 100,
+          confirmToken: expectedToken,
+          note: "Call this tool again with the same workbook/module/newCode and this confirmToken to apply the write.",
+        };
+        if (payload.launchedExcelPid) { preview.launchedExcelPid = payload.launchedExcelPid; }
+        return { content: [{ type: "text", text: JSON.stringify(preview, null, 2) }] };
+      } catch (e: any) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
+      }
+    }
+
+    // --- confirmToken必須（dry-runを経ずにいきなり書き込むことを防ぐ） ---
+    if (!params.confirmToken) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: false, error: "confirmToken is required. Call this tool with dryRun:true first to preview the change and obtain a confirmToken." }) }],
+        isError: true,
+      };
+    }
+    if (params.confirmToken !== expectedToken) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: false, error: "confirmToken does not match the current (workbook, module, newCode). The code may have changed since the dry-run; re-run with dryRun:true to get a fresh token." }) }],
+        isError: true,
+      };
+    }
+
+    // --- 実書き込み: import_single_module.ps1 経由（Import-ModuleToVBProjectを再利用） ---
+    const scriptsDir = getScriptsDir();
+    if (!scriptsDir) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "MCP_SCRIPTS_DIR/MCP_PS_LIST not set" }) }], isError: true };
+    }
+    const singleModuleScript = path.join(scriptsDir, "import_single_module.ps1");
+    if (!fs.existsSync(singleModuleScript)) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: `script not found: ${singleModuleScript}` }) }], isError: true };
+    }
+
+    const tmpFile = path.join(os.tmpdir(), `vba_mcp_write_${Date.now()}_${Math.random().toString(36).slice(2)}.txt`);
+    fs.writeFileSync(tmpFile, params.newCode, { encoding: "utf8" });
+
+    try {
+      const args = [
+        "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+        "-File", singleModuleScript,
+        "-WorkbookPath", params.workbookPath || "",
+        "-WorkbookName", params.workbook || "",
+        "-ModuleName", params.module,
+        "-SourceCodePath", tmpFile,
+        "-ScriptsDir", scriptsDir,
+      ];
+      const { stdout } = await execFileAsync("powershell.exe", args, {
+        windowsHide: true,
+        encoding: "buffer",
+        timeout: 30000,
+        maxBuffer: 2 * 1024 * 1024,
+      });
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
+      return extractFailureResult(e);
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch { /* noop */ }
     }
   }
 );

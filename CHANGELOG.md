@@ -9,6 +9,40 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.33] - 2026-07-25
+### ### Fixed
+- Real regression found in live testing: repeated MCP-driven Excel auto-launches (from `Get-OrStartExcelApplication`) could leave an orphaned, workbook-less Excel process running. Once more than one Excel process exists, `GetActiveObject("Excel.Application")` can resolve to the wrong one -- this broke the ordinary VS Code Export command with `保存済みの Excel ブックが見つかりません` / `DISP_E_BADINDEX` errors that had nothing to do with the export logic itself, since it landed on the empty automation instance instead of the user's real session.
+
+### ### Added
+- `Get-OrStartExcelApplication` now returns `LaunchedProcessId`, populated only when it actually had to launch a new Excel instance (null when reusing one already running). This is surfaced as `launchedExcelPid` in the JSON response of every MCP tool that can trigger an auto-launch (`excel_get_module_code`, `vba_search_code`, `excel_update_module_code`, `excel_list_macros`, `excel_run_macro`), so a calling agent/user can identify -- and if needed manually clean up -- a process this tooling caused to exist, without touching an unrelated pre-existing Excel session. This is identification/groundwork only; the existing "auto-launched Excel stays open and visible" behavior is unchanged.
+
+## [0.0.32] - 2026-07-25
+### ### Fixed
+- `Get-ModulePublicSubs` (used by `excel_list_macros`) was missing two categories of runnable Subs: (1) Subs declared without the explicit `Public` keyword, which VBA treats as Public by default -- the common case, since most authors omit it; (2) procedures with non-ASCII names (e.g. Japanese identifiers) were matched with an ASCII-only regex and silently skipped even when correctly marked `Public`. Both are now detected correctly; `Private`/`Friend` subs remain excluded.
+
+### ### Improved
+- Added a description to every MCP tool and to the less-obvious parameters (via zod `.describe()`). Previously none of the 6 tools had any description text, so an AI client connecting without prior context about this project would see only tool names and bare parameter types -- with no indication of `excel_update_module_code`'s required `dryRun` → `confirmToken` flow, that `workbookPath` auto-launches Excel, that `excel_run_macro` can hang on a blocking dialog, or that a successful response only means the call didn't throw (not that the macro did the intended thing). This is the primary "reference" for AI clients now; see the note in the README's AI client section for why a separate reference doc wasn't added on top of it.
+
+### ### Notes from live MCP testing
+- VBA compiles the entire project as a unit. If ANY module in the workbook has a compile error (e.g. an undeclared variable under `Option Explicit`, or otherwise malformed code), `excel_run_macro` will fail/hang for every macro in the project, not just the broken one -- Excel shows a blocking "コンパイルエラー" dialog that requires manual dismissal. This is inherent to VBA, not something these tools can detect or work around; if a macro call unexpectedly hangs or times out, check Excel directly for a stuck compile-error dialog before assuming the target macro itself is at fault.
+
+## [0.0.31] - 2026-07-25
+### ### Added
+- New MCP tool `excel_update_module_code`: lets an AI client (Claude Code/Desktop, etc.) write code into a VBA module. Uses a `dryRun` → `confirmToken` two-step flow (preview the diff and get a token, then re-call with the token to actually apply it), and always takes a timestamped backup to `.excel-vba-sync-backups` next to the workbook before writing. Reuses the same `VBComponents.Import()`-based logic already fixed for issue #3, so Attribute-line handling stays correct; a module of type Document (Sheet/ThisWorkbook) can still lose shortcut-key attributes on write due to the underlying VBA API constraint, and the response says so explicitly.
+- `ExcelUtil.ps1`: `Get-OrStartExcelApplication` (launches Excel if it isn't already running) and `Resolve-TargetWorkbook` (opens a workbook by full path if it isn't already open) so tools no longer require Excel/the target workbook to be manually opened first. All MCP tools gained an optional `workbookPath` parameter to use this.
+- `ExcelUtil.ps1`: `Test-VbaTrustAccess` surfaces a distinct `ERR_VBOM_TRUST_DISABLED` error (instead of silently returning nothing) when Excel's "Trust access to the VBA project object model" setting is off.
+- New command **Excel VBA: Print MCP Server Config (for AI)** generates a ready-to-paste `.mcp.json`/`claude_desktop_config.json` snippet. The MCP server (`dist-server/server.js`) runs as plain Node and can be used by an AI client standalone, without VS Code running.
+- `excel_run_macro` gained `timeoutMs` (default 30s); on timeout the wrapping PowerShell process is killed and `ERR_TIMEOUT` is returned (note: this does not un-stick Excel itself if it's blocked on a dialog).
+- `vba_search_code` gained `maxResults` (default 50); overly broad queries against a large project now return `truncated`/`totalMatchCount` instead of an unbounded result set.
+
+### ### Fixed
+- Fixed extension activation crash when the folder configured via "Set Export Folder" had since been deleted. `fs.watch()` was throwing synchronously (ENOENT) with no error handling, which aborted `activate()` before commands registered later (Export/Import/etc.) ever got wired up — the window would open but none of those commands would work.
+- Tool failure responses are now consistently signaled at the MCP protocol level (`isError: true`) instead of only being visible by inspecting the JSON body — this covers both `{error: "ERR_..."}` and general `{ok: false, ...}` payloads, and also recovers the real error detail from a script's stdout when PowerShell exits non-zero (previously collapsed into a generic "ps failed" message).
+- `excel_list_macros` list-mode response unified to `{ok, macros, count}` instead of a bare array with no success/error envelope.
+
+### ### Known limitations
+- `ok: true` / no error only means the underlying script completed without throwing — it does not confirm a macro did what was intended (cell writes, file output, Immediate window output aren't observable through these tools). See the README's AI client section for more detail.
+
 ## [0.0.30] - 2026-07-25
 ### ### Fixed
 - Fixed Marketplace README rendering: replaced shields.io `visual-studio-marketplace` badges (retired by shields.io, showing as broken placeholders) with `vsmarketplacebadges.dev` equivalents, and removed stray tab characters inside markdown table cells that were breaking table rendering.
