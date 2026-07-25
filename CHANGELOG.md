@@ -9,6 +9,16 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.32] - 2026-07-25
+### ### Fixed
+- `Get-ModulePublicSubs` (used by `excel_list_macros`) was missing two categories of runnable Subs: (1) Subs declared without the explicit `Public` keyword, which VBA treats as Public by default -- the common case, since most authors omit it; (2) procedures with non-ASCII names (e.g. Japanese identifiers) were matched with an ASCII-only regex and silently skipped even when correctly marked `Public`. Both are now detected correctly; `Private`/`Friend` subs remain excluded.
+
+### ### Improved
+- Added a description to every MCP tool and to the less-obvious parameters (via zod `.describe()`). Previously none of the 6 tools had any description text, so an AI client connecting without prior context about this project would see only tool names and bare parameter types -- with no indication of `excel_update_module_code`'s required `dryRun` → `confirmToken` flow, that `workbookPath` auto-launches Excel, that `excel_run_macro` can hang on a blocking dialog, or that a successful response only means the call didn't throw (not that the macro did the intended thing). This is the primary "reference" for AI clients now; see the note in the README's AI client section for why a separate reference doc wasn't added on top of it.
+
+### ### Notes from live MCP testing
+- VBA compiles the entire project as a unit. If ANY module in the workbook has a compile error (e.g. an undeclared variable under `Option Explicit`, or otherwise malformed code), `excel_run_macro` will fail/hang for every macro in the project, not just the broken one -- Excel shows a blocking "コンパイルエラー" dialog that requires manual dismissal. This is inherent to VBA, not something these tools can detect or work around; if a macro call unexpectedly hangs or times out, check Excel directly for a stuck compile-error dialog before assuming the target macro itself is at fault.
+
 ## [0.0.31] - 2026-07-25
 ### ### Added
 - New MCP tool `excel_update_module_code`: lets an AI client (Claude Code/Desktop, etc.) write code into a VBA module. Uses a `dryRun` → `confirmToken` two-step flow (preview the diff and get a token, then re-call with the token to actually apply it), and always takes a timestamped backup to `.excel-vba-sync-backups` next to the workbook before writing. Reuses the same `VBComponents.Import()`-based logic already fixed for issue #3, so Attribute-line handling stays correct; a module of type Document (Sheet/ThisWorkbook) can still lose shortcut-key attributes on write due to the underlying VBA API constraint, and the response says so explicitly.
