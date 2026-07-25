@@ -9,6 +9,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.34] - 2026-07-25
+### ### Fixed
+- v0.0.33's published VSIX unintentionally bundled `.mcp.json` (a machine-specific MCP config containing the developer's local Windows username and folder paths), plus internal working files `BRUSHUP_NOTES.md` and `brushup_changes.diff`. Root cause: `.gitignore` only keeps files out of git, not out of the packaged VSIX -- that requires `.vscodeignore`, which these files were missing from. Added them (along with `.claude/` and `.github/`) to `.vscodeignore`; no functional code changes in this release.
+
 ## [0.0.33] - 2026-07-25
 ### ### Fixed
 - Real regression found in live testing: repeated MCP-driven Excel auto-launches (from `Get-OrStartExcelApplication`) could leave an orphaned, workbook-less Excel process running. Once more than one Excel process exists, `GetActiveObject("Excel.Application")` can resolve to the wrong one -- this broke the ordinary VS Code Export command with `保存済みの Excel ブックが見つかりません` / `DISP_E_BADINDEX` errors that had nothing to do with the export logic itself, since it landed on the empty automation instance instead of the user's real session.
