@@ -12,7 +12,7 @@ const execFileAsync = promisify(execFile);
 console.log("# vba-excel-mcp server: booting...");
 
 const server = new McpServer({ name: "vba-excel-mcp", version: "0.1.0" });
-server.tool("ping", {}, async () => ({ content: [{ type: "text", text: "pong" }] }));
+server.tool("ping", "Health check for the excel-vba-sync MCP server. Returns the literal string 'pong' if the server process is reachable. Does not touch Excel.", {}, async () => ({ content: [{ type: "text", text: "pong" }] }));
 
 const transport = new StdioServerTransport();
 server.connect(transport);
@@ -75,10 +75,11 @@ function extractFailureResult(e: any): { content: { type: "text"; text: string }
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_get_module_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_get_module_code",
+  "Read the full source code of a VBA module (all Sub/Function bodies as VBE would show them; module- and procedure-level Attribute lines, e.g. macro shortcut key bindings, are NOT included -- this reads via CodeModule.Lines()). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off (cannot be enabled programmatically).",
   {
-    workbook: z.string(),
-    module: z.string(),
-    workbookPath: z.string().optional(),
+    workbook: z.string().describe("Workbook display name, e.g. 'Book1.xlsm'. Must match an already-open workbook unless workbookPath is also given."),
+    module: z.string().describe("VBA module name (e.g. 'Module1', 'Sheet1', 'ThisWorkbook')."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed, instead of requiring it to already be open."),
   },
   async (params) => {
     const wb = psq(params.workbook);
@@ -138,10 +139,11 @@ try {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_macros ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_list_macros",
+  "List runnable procedures (Subs; module-level Public or implicitly-public -- Private/Friend are excluded, and Functions are not listed) in a VBA module, each with a fully-qualified name usable directly as the 'qualified' argument to excel_run_macro. Scans all currently open workbooks for a module with this name unless workbookPath narrows it to one specific file (auto-launching/opening it if needed).",
   {
-    moduleName: z.string(),
-    basPath: z.string().optional(),
-    workbookPath: z.string().optional(),
+    moduleName: z.string().describe("VBA module name to enumerate procedures in."),
+    basPath: z.string().optional().describe("Optional: full path to a previously-exported .bas file for this module; if given, its content hash is used to disambiguate which open workbook to target when multiple books have a same-named module."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed, instead of requiring it to already be open."),
   },
   async (params) => {
     const ps = process.env.MCP_PS_LIST;
@@ -188,16 +190,17 @@ server.tool(
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_run_macros ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_run_macro",
+  "Run a VBA macro via Application.Run. WARNING: if the macro shows a dialog (MsgBox, InputBox) or a UserForm, or otherwise waits for user interaction, this call will hang until timeoutMs is reached; the timeout only stops this tool's own wait -- it does NOT close the dialog or unstick Excel, so check Excel directly afterward if you hit ERR_TIMEOUT. IMPORTANT: a successful response only means Application.Run completed without throwing an exception -- it does NOT confirm the macro did the intended thing (cell writes, files written, etc. are not verified by this tool). Prefer excel_list_macros first to get an exact 'qualified' name rather than guessing moduleName/procName.",
   {
-    qualified: z.string().optional(),      // 例："'Book1.xlsm'!Module1.aaa"（最優先）
-    moduleName: z.string().optional(),     // qualified が無い場合に使用
-    procName: z.string().optional(),       // qualified が無い場合に使用
-    workbookName: z.string().optional(),   // 同名対策で限定したい場合に使用（.ps1 側で対応していれば）
-    basPath: z.string().optional(),        // 内容一致で限定する場合
-    workbookPath: z.string().optional(),   // フルパス指定時、未オープンなら自動でExcelを起動・Open
-    ActivateExcel: z.boolean().optional(),
-    ShowStatus: z.boolean().optional(),
-    timeoutMs: z.number().optional(),      // 既定30秒。MsgBox等でExcel側が固まった場合にこちらの待ちを打ち切る
+    qualified: z.string().optional().describe("Fully-qualified macro name, e.g. \"'Book1.xlsm'!Module1.DoWork\" (as returned by excel_list_macros). Takes priority over moduleName/procName if both are given."),
+    moduleName: z.string().optional().describe("Module name. Required together with procName if 'qualified' is not given."),
+    procName: z.string().optional().describe("Procedure (Sub) name within moduleName. Required together with moduleName if 'qualified' is not given."),
+    workbookName: z.string().optional().describe("Optional: display name of the workbook to disambiguate when the same module/proc name exists in multiple open workbooks."),
+    basPath: z.string().optional().describe("Optional: full path to a previously-exported .bas file; its content hash disambiguates which open workbook to target."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed, instead of requiring it to already be open."),
+    ActivateExcel: z.boolean().optional().describe("Bring the Excel window to the foreground before running."),
+    ShowStatus: z.boolean().optional().describe("Show a transient message in Excel's status bar while/after running."),
+    timeoutMs: z.number().optional().describe("Milliseconds to wait before giving up and returning ERR_TIMEOUT. Default 30000. Does not stop Excel itself if it's blocked on a dialog."),
   },
   async (params) => {
     const ps = process.env.MCP_PS_RUN || process.env.MCP_PS_LIST;
@@ -277,13 +280,14 @@ server.tool(
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ vba_search_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "vba_search_code",
+  "Search VBA source code for a literal string or regex across all currently open workbooks (or one specific workbook via workbookPath / workbookFilter). Returns matching LINES with context (workbook/module/proc/line number), not full module code -- use excel_get_module_code to read a whole module. Results are capped at maxResults (default 50); if there were more matches, the response sets truncated:true and totalMatchCount so you know to narrow the query rather than assuming there were no more hits.",
   {
-    query: z.string(),
-    moduleFilter: z.string().optional(),
-    workbookFilter: z.string().optional(),
-    useRegex: z.boolean().optional(),
-    workbookPath: z.string().optional(),
-    maxResults: z.number().optional(),     // 既定50件。超過時は truncated:true で通知
+    query: z.string().describe("Search text. Plain substring by default, or a .NET regex pattern if useRegex is true. Case-insensitive."),
+    moduleFilter: z.string().optional().describe("Restrict the search to a single module name."),
+    workbookFilter: z.string().optional().describe("Restrict the search to a single open workbook's display name."),
+    useRegex: z.boolean().optional().describe("Treat 'query' as a .NET regular expression instead of a literal substring."),
+    workbookPath: z.string().optional().describe("Full path to a workbook to include in the search. If set and not already open, Excel is auto-launched and the file auto-opened before searching."),
+    maxResults: z.number().optional().describe("Maximum number of hits to return in one call. Default 50. Excess hits are dropped, with truncated:true and totalMatchCount reported instead."),
   },
   async (params) => {
     // PowerShellワンライナーで開いている全ブックの全モジュールを走査
@@ -433,13 +437,14 @@ function computeConfirmToken(workbook: string, module: string, newCode: string):
 
 server.tool(
   "excel_update_module_code",
+  "Overwrite the code of an EXISTING VBA module (cannot create new modules, and cannot target .frm UserForm modules -- fails with ERR_UNSUPPORTED_MODULE_TYPE). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules.",
   {
-    workbook: z.string().optional(),
-    workbookPath: z.string().optional(),
-    module: z.string(),
-    newCode: z.string(),
-    dryRun: z.boolean().optional(),
-    confirmToken: z.string().optional(),
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    module: z.string().describe("Name of an EXISTING VBA module to overwrite. New modules cannot be created via this tool."),
+    newCode: z.string().describe("Full replacement source code for the module (procedure bodies only -- do not include Attribute lines)."),
+    dryRun: z.boolean().optional().describe("If true, only preview the change (current vs new code) and return a confirmToken; does not write anything."),
+    confirmToken: z.string().optional().describe("Token obtained from a prior dryRun:true call with the identical workbook/module/newCode. Required to actually perform the write."),
   },
   async (params) => {
     const wb = psq(params.workbook ?? "");
