@@ -9,6 +9,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.30] - 2026-07-25
+### ### Fixed
+- Fixed Marketplace README rendering: replaced shields.io `visual-studio-marketplace` badges (retired by shields.io, showing as broken placeholders) with `vsmarketplacebadges.dev` equivalents, and removed stray tab characters inside markdown table cells that were breaking table rendering.
+
 ## [0.0.29] - 2026-07-25
 ### ### Fixed
 - Fixed garbled Japanese description text for the "Export Folder" setting in `package.json` (#2).
