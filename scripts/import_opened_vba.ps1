@@ -25,7 +25,8 @@
 #>
 
 param (
-    [string]$InputFile  #オプション（単一ファイル/フォルダ）
+    [string]$InputFile,  #オプション（単一ファイル/フォルダ）
+    [switch]$FunctionsOnly  # dot-sourceで関数定義のみ読み込む場合はこのスイッチを指定する
 )
 
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -49,7 +50,8 @@ function Get-Timestamp {
     Get-Date -Format 'yyyy-MM-dd HH:mm:ss'  # → [YYYY-MM-DD HH:mm:ss]
 }
 
-if (-not $InputFile) {
+# FunctionsOnly時はInputFile必須チェックをスキップ（関数定義だけを提供する用途のため）
+if (-not $FunctionsOnly -and -not $InputFile) {
     #Write-Host ($messages."import.error.noImportFolder")
     $msg = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $messages.'common.error.noImportFolder'
     Write-host $msg
@@ -299,6 +301,9 @@ function Get-ComProp {
     param([object]$obj, [string]$prop)
     $obj.GetType().InvokeMember($prop, 'GetProperty', $null, $obj, $null)
 }
+
+# 関数定義のみを他スクリプトへdot-sourceで提供する場合は、ここでメイン処理を打ち切る
+if ($FunctionsOnly) { return }
 
 try {
     $excel = [Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application")

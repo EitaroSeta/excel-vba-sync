@@ -343,6 +343,7 @@ async function startServer(context: vscode.ExtensionContext) {
     MCP_PS_LIST: listPs,   // ★ プロジェクトルートではなく拡張配下を注入
     MCP_PS_RUN:  runPs,
     MCP_VBA_ROOT: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
+    MCP_SCRIPTS_DIR: scriptsDir,   // ExcelUtil.ps1 等を dot-source するための基準パス
   };
 
   channel.appendLine(`[MCP] starting: ${serverJs}`);
@@ -1275,6 +1276,40 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("vbaMcp.listAndRunMacro", async () => {
       await ensureServer(context);
       await cmdListAndRunMacro();
+    }),
+    vscode.commands.registerCommand("excel-vba-sync.printMcpConfig", async () => {
+      // Claude Code の .mcp.json / Claude Desktop の claude_desktop_config.json に
+      // そのまま貼り付けられる設定を、拡張機能自身の絶対パス解決ロジック（startServer()と同じ）で生成する。
+      // node dist-server/server.js は VS Code が起動していなくても単独で動作する。
+      const serverJs = path.join(context.extensionPath, "dist-server", "server.js");
+      const scriptsDir = path.join(context.extensionPath, "scripts");
+      const listPs = path.join(scriptsDir, "FindAndRun-ExcelMacroByModule.ps1");
+      const runPs = listPs;
+
+      const config = {
+        mcpServers: {
+          "excel-vba-sync": {
+            command: process.execPath,
+            args: [serverJs],
+            env: {
+              MCP_PS_LIST: listPs,
+              MCP_PS_RUN: runPs,
+              MCP_SCRIPTS_DIR: scriptsDir,
+              // process.execPath は VS Code 本体(Code.exe)を指す。拡張ホスト内では
+              // ELECTRON_RUN_AS_NODE が既に立っているため node として動くが、
+              // Claude Code 等が単独でこのコマンドを起動する際は自前でこの変数を
+              // 渡してやる必要がある（無いと Code.exe が普通に起動してしまう）。
+              ELECTRON_RUN_AS_NODE: "1",
+            },
+          },
+        },
+      };
+      const configText = JSON.stringify(config, null, 2);
+
+      await vscode.env.clipboard.writeText(configText);
+      const doc = await vscode.workspace.openTextDocument({ language: "json", content: configText });
+      await vscode.window.showTextDocument(doc, { preview: false });
+      vscode.window.showInformationMessage(t('extension.info.mcpConfigCopied'));
     }),
     { dispose: () => stopServer() }
   );

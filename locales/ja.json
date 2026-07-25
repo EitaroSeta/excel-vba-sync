@@ -23,6 +23,7 @@
   "extension.info.exportingModule":"【INFO】✅モジュールをエクスポートしています: {0}",
   "extension.info.tooltip_exportVBA": "開いている Excel ファイルの VBA モジュールをエクスポートします。",
   "extension.info.tooltip_importVBA": "指定したフォルダーの VBA モジュールをインポートします。",
+  "extension.info.mcpConfigCopied": "【INFO】✅MCPサーバー設定をクリップボードにコピーし、エディタに開きました。Claude Code の .mcp.json や Claude Desktop の claude_desktop_config.json に貼り付けてください。",
   "export.error.noExcel": "【ERROR】❌Powershell: Excel が起動していません。",
   "export.info.exportFolderName": "【INFO】✅Powershell: エクスポートフォルダー: {0}",
   "export.error.invalidFolder": "【ERROR】❌Powershell: エクスポートフォルダーがありません: {0}",

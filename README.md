@@ -89,6 +89,24 @@ curl.exe -sS -L -f --retry 3 --retry-delay 2 "$URL" -o "$OUT"
 code --install-extension "$OUT"
 ```
 
+## 🤖 AIクライアントから使う（Claude Code / Claude Desktop） / Use from an AI client
+
+この拡張機能には[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)サーバーが内蔵されており、Claude Code・Claude Desktopなどの外部AIクライアントから、VBAコードの読み取り・検索・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます（`excel_update_module_code`ツール）。
+
+**セットアップ手順**
+1. VS Codeでこの拡張機能をインストールした状態で、コマンドパレット（`Ctrl+Shift+P`）から **`Excel VBA: Print MCP Server Config (for AI)`** を実行する
+2. 生成されたJSON（クリップボードにコピー済み）を、Claude Codeなら`.mcp.json`、Claude Desktopなら`claude_desktop_config.json`の`mcpServers`に貼り付ける
+3. AIクライアントを再起動すると、`excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `excel_update_module_code`の5ツールが使えるようになる
+
+このMCPサーバー（`dist-server/server.js`）はNode単体で動作するため、**VS Codeを開いていなくても**AIクライアントから直接起動・利用できます（ただしExcel本体とVBA実行環境はWindows上に必要です）。
+
+**書き込み（`excel_update_module_code`）の安全設計**
+- `dryRun:true`でまず呼び出すと、実際には書き込まず、現在のコードとの差分プレビュー＋`confirmToken`が返る
+- 同じ`confirmToken`を付けて再度呼び出すことで、初めて実際にExcelへ書き込まれる（AIが誤って一発で書き込んでしまうことを防ぐ2段階フロー）
+- 書き込み前には自動的に現在のコードがワークブックと同じフォルダの`.excel-vba-sync-backups`にタイムスタンプ付きで退避される
+- Sheet/ThisWorkbookのコードビハインド（Documentモジュール）に書き込んだ場合、ショートカットキー割り当てなどのプロシージャ単位のAttribute情報はVBAのAPI制約上失われる（レスポンスに警告が入る）
+- 対象のExcelファイルが起動していなくても、ワークブックのフルパスを指定すれば自動的にExcelを起動・オープンして操作する（Excelのトラストセンターで「VBAプロジェクトオブジェクトモデルへのアクセスを信頼する」が有効になっている必要がある）
+
 ## ⚠重要 / Important ##
 
 **●エクスポートしたファイルの属性は編集しないでください**

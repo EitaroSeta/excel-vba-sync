@@ -23,6 +23,7 @@
   "extension.info.exportingModule":"【INFO】✅Exporting module: {0}",
   "extension.info.tooltip_exportVBA": "Export VBA modules from the currently opened Excel file.",
   "extension.info.tooltip_importVBA": "Import VBA modules from the specified folder.",
+  "extension.info.mcpConfigCopied": "【INFO】✅MCP server config copied to clipboard and opened in the editor. Paste it into Claude Code's .mcp.json or Claude Desktop's claude_desktop_config.json.",
   "export.error.noExcel": "【ERROR】❌Powershell: Excel is not running.",
   "export.info.exportFolderName": "【INFO】✅Powershell: Export folder: {0}",
   "export.error.invalidFolder": "【ERROR】❌Powershell: Export folder is invalid: {0}",

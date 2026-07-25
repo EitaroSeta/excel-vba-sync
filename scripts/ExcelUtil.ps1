@@ -175,3 +175,56 @@ function Find-DetectWorkbookByBas {
   if ($candidates.Count -eq 1) { return $candidates[0] }
   return $null
 }
+
+# Excelアプリケーションを取得。起動していなければ新規起動してフォールバックする
+# 戻り値: @{ App = <Excel.Application>; WasAlreadyRunning = <bool> }
+function Get-OrStartExcelApplication {
+  param([int]$MaxTry = 5, [int]$DelayMs = 200)
+  try {
+    $app = Get-ExcelSafe -MaxTry $MaxTry -DelayMs $DelayMs
+    return [pscustomobject]@{ App = $app; WasAlreadyRunning = $true }
+  } catch {
+    $app = New-Object -ComObject Excel.Application
+    $app.Visible = $true
+    Wait-ExcelReady -App $app
+    return [pscustomobject]@{ App = $app; WasAlreadyRunning = $false }
+  }
+}
+
+# ワークブックをフルパスまたは名前で解決する。パス指定時、未オープンならOpenする
+function Resolve-TargetWorkbook {
+  param(
+    [Parameter(Mandatory=$true)][object]$App,
+    [string]$WorkbookPath,
+    [string]$WorkbookName
+  )
+  if ($WorkbookPath -and (Test-Path -LiteralPath $WorkbookPath)) {
+    $fullPath = (Resolve-Path -LiteralPath $WorkbookPath).ProviderPath
+    foreach ($wb in @($App.Workbooks)) {
+      try { if ($wb.FullName -ieq $fullPath) { return $wb } } catch {}
+    }
+    # 未オープンなら開く
+    return $App.Workbooks.Open($fullPath)
+  }
+
+  if ($WorkbookName) {
+    $wantName = Set-WorkbookName $WorkbookName
+    foreach ($wb in @($App.Workbooks)) {
+      $currName = Set-WorkbookName $wb.Name
+      if ($currName -ieq $wantName) { return $wb }
+    }
+  }
+
+  throw "ERR_WORKBOOK_NOT_FOUND: workbook not found (path='$WorkbookPath', name='$WorkbookName')"
+}
+
+# Trust Center「VBAプロジェクトオブジェクトモデルへのアクセスを信頼する」が有効か確認する
+function Test-VbaTrustAccess {
+  param([Parameter(Mandatory=$true)][object]$Workbook)
+  try {
+    $null = $Workbook.VBProject.VBComponents.Count
+    return $true
+  } catch {
+    throw "ERR_VBOM_TRUST_DISABLED: Trust access to the VBA project object model is disabled. Enable it via Excel Options > Trust Center > Trust Center Settings > Macro Settings > 'Trust access to the VBA project object model', then retry."
+  }
+}

@@ -73,6 +73,10 @@ param(
   [string]$BasPath,
 
   [Parameter(ParameterSetName='ByName')]
+  [Parameter(ParameterSetName='ByQualified')]
+  [string]$WorkbookPath,   # 指定時、未オープンなら自動でExcelを起動・当該ブックをOpenする
+
+  [Parameter(ParameterSetName='ByName')]
   [ValidateSet("JSON")]
   [string]$ListOutput = "JSON",
 
@@ -157,8 +161,14 @@ if (-not ("Microsoft.VisualBasic.Interaction" -as [type])) {
 # === メイン処理 ===
 [MessageFilter]::Register()
 try {
-  $excel = Get-ExcelSafe
+  $excel = (Get-OrStartExcelApplication).App
   Wait-ExcelReady -App $excel
+
+  $targetWb = $null
+  if ($WorkbookPath) {
+    $targetWb = Resolve-TargetWorkbook -App $excel -WorkbookPath $WorkbookPath
+    Test-VbaTrustAccess -Workbook $targetWb | Out-Null
+  }
 
   # Qualified指定を判定して実行
   if (-not [string]::IsNullOrWhiteSpace($Qualified)) {
@@ -183,9 +193,8 @@ try {
     }
   }
 
-  # BasPath 一致でブックを特定できるなら優先
-  $targetWb = $null
-  if ($BasPath) {
+  # BasPath 一致でブックを特定できるなら優先（WorkbookPathで既に特定済みならそちらを優先）
+  if (-not $targetWb -and $BasPath) {
     $targetWb = Find-DetectWorkbookByBas -Excel $excel -ModuleName $ModuleName -BasPath $BasPath
   }
 
