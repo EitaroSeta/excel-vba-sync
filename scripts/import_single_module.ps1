@@ -20,8 +20,13 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding           = [Console]::OutputEncoding
 
+$script:launchedExcelPid = $null
+
 function Write-ResultAndExit {
     param([hashtable]$Result, [int]$ExitCode)
+    # このツール呼び出しでExcelを新規起動していた場合、そのPIDを常に結果へ含める。
+    # 呼び出し側が「AI経由で自動起動されたExcelプロセス」を識別し、必要なら後始末できるようにするため。
+    if ($script:launchedExcelPid) { $Result["launchedExcelPid"] = $script:launchedExcelPid }
     ($Result | ConvertTo-Json -Depth 6)
     exit $ExitCode
 }
@@ -36,6 +41,7 @@ if (-not (Test-Path -LiteralPath $SourceCodePath)) {
 try {
     $r = Get-OrStartExcelApplication
     $excel = $r.App
+    $script:launchedExcelPid = $r.LaunchedProcessId
 } catch {
     Write-ResultAndExit @{ ok = $false; error = "excel_not_found" } 1
 }

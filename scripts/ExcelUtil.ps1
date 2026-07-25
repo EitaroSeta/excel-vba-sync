@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 public static class User32 {
   [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 }
 "@
 
@@ -181,17 +182,27 @@ function Find-DetectWorkbookByBas {
 }
 
 # Excelアプリケーションを取得。起動していなければ新規起動してフォールバックする
-# 戻り値: @{ App = <Excel.Application>; WasAlreadyRunning = <bool> }
+# 戻り値: @{ App = <Excel.Application>; WasAlreadyRunning = <bool>; LaunchedProcessId = <int?> }
+# LaunchedProcessId は「このツールがこの呼び出しで新規起動したExcelプロセスのPID」。
+# WasAlreadyRunning=$true（既存インスタンスを再利用）の場合は $null。
+# 呼び出し側は、複数Excelプロセス並存時のGetActiveObjectの不定挙動を避けるため、
+# 用が済んだこのPIDを識別・後始末（手動/将来の自動クリーンアップ）する手掛かりに使える。
 function Get-OrStartExcelApplication {
   param([int]$MaxTry = 5, [int]$DelayMs = 200)
   try {
     $app = Get-ExcelSafe -MaxTry $MaxTry -DelayMs $DelayMs
-    return [pscustomobject]@{ App = $app; WasAlreadyRunning = $true }
+    return [pscustomobject]@{ App = $app; WasAlreadyRunning = $true; LaunchedProcessId = $null }
   } catch {
     $app = New-Object -ComObject Excel.Application
     $app.Visible = $true
     Wait-ExcelReady -App $app
-    return [pscustomobject]@{ App = $app; WasAlreadyRunning = $false }
+    $launchedPid = $null
+    try {
+      [uint32]$outProcId = 0
+      [void][User32]::GetWindowThreadProcessId([IntPtr]$app.Hwnd, [ref]$outProcId)
+      if ($outProcId -ne 0) { $launchedPid = [int]$outProcId }
+    } catch {}
+    return [pscustomobject]@{ App = $app; WasAlreadyRunning = $false; LaunchedProcessId = $launchedPid }
   }
 }
 

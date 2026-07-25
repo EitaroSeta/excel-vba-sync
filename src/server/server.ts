@@ -111,7 +111,9 @@ catch { @{ ok=$false; error='module_not_found'; module='${mod}' } | ConvertTo-Js
 try {
   $cm=$vbc.CodeModule
   $code=$cm.Lines(1, $cm.CountOfLines)
-  @{ ok=$true; workbook=$wb.Name; module=$vbc.Name; lines=$cm.CountOfLines; code=$code } | ConvertTo-Json -Depth 6
+  $res = @{ ok=$true; workbook=$wb.Name; module=$vbc.Name; lines=$cm.CountOfLines; code=$code }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 6
 } catch {
   @{ ok=$false; error='read_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
 }
@@ -409,7 +411,9 @@ if ($totalMatchCount -gt $maxResultsParam) {
   $hits = $hits[0..($maxResultsParam - 1)]
   $truncated = $true
 }
-@{ ok=$true; query=$reRaw; hits=$hits; count=$hits.Count; totalMatchCount=$totalMatchCount; truncated=$truncated } | ConvertTo-Json -Depth 6
+$searchRes = @{ ok=$true; query=$reRaw; hits=$hits; count=$hits.Count; totalMatchCount=$totalMatchCount; truncated=$truncated }
+if ($r.LaunchedProcessId) { $searchRes.launchedExcelPid = $r.LaunchedProcessId }
+$searchRes | ConvertTo-Json -Depth 6
 `;
 
     try {
@@ -482,7 +486,9 @@ catch { @{ ok=$false; error='module_not_found'; module='${mod}' } | ConvertTo-Js
 try {
   $cm=$vbc.CodeModule
   $code = if ($cm.CountOfLines -gt 0) { $cm.Lines(1, $cm.CountOfLines) } else { "" }
-  @{ ok=$true; workbook=$wb.Name; module=$vbc.Name; componentType=$vbc.Type; currentCode=$code } | ConvertTo-Json -Depth 6
+  $dryRunRes = @{ ok=$true; workbook=$wb.Name; module=$vbc.Name; componentType=$vbc.Type; currentCode=$code }
+  if ($r.LaunchedProcessId) { $dryRunRes.launchedExcelPid = $r.LaunchedProcessId }
+  $dryRunRes | ConvertTo-Json -Depth 6
 } catch {
   @{ ok=$false; error='read_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
 }
@@ -508,7 +514,7 @@ try {
           return { content: [{ type: "text", text: outText }], isError: true };
         }
 
-        const preview = {
+        const preview: Record<string, unknown> = {
           ok: true,
           workbook: payload.workbook,
           module: payload.module,
@@ -519,6 +525,7 @@ try {
           confirmToken: expectedToken,
           note: "Call this tool again with the same workbook/module/newCode and this confirmToken to apply the write.",
         };
+        if (payload.launchedExcelPid) { preview.launchedExcelPid = payload.launchedExcelPid; }
         return { content: [{ type: "text", text: JSON.stringify(preview, null, 2) }] };
       } catch (e: any) {
         return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
