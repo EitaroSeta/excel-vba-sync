@@ -9,6 +9,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.38] - 2026-07-26
+### ### Fixed
+- The v0.0.36 anchor-inlining fix did not actually resolve the broken feature tables on the Marketplace page (confirmed by re-checking the live page at v0.0.36). The real cause was that `README.md` used CRLF line endings throughout, leaving a stray trailing `\r` on every line -- including the table's delimiter row (`|---|---|`). Headings and bullet lists tolerate a trailing `\r` invisibly, but the delimiter-row check used by the Marketplace renderer's table parser apparently does not, so the whole table fell back to being rendered as one plain paragraph of pipe-delimited text. Normalized `README.md` to LF line endings, which should let the tables parse correctly.
+
 ## [0.0.37] - 2026-07-26
 ### ### Fixed
 - Fixed a Mermaid parse error in `docs/DEVELOPMENT.md`'s architecture diagram: the `PS` node was written as `PS ["PowerShell Scripts(.ps1)"]` (a stray space between the node ID and its label brackets), which the Mermaid grammar does not allow -- GitHub showed "Unable to render rich display / Parse error on line 4" instead of the diagram. This typo predates the recent README split and was simply never noticed until now. Fixed to `PS["PowerShell Scripts(.ps1)"]`, matching the other three nodes.
