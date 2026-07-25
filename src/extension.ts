@@ -85,17 +85,26 @@ function getTimestamp(): string {
 
 // Watch a folder for changes
 function watchFolder(folderPath: string, treeProvider: SimpleTreeProvider) {
-  fs.watch(folderPath, { recursive: true }, (eventType, filename) => {
-    const timestamp = getTimestamp();
-    if (filename) {
-      //outputChannel.appendLine(`[${timestamp}] Change detected: ${eventType} - ${filename}`);
-      //outputChannel.show();
-      treeProvider.refresh(); // Tree view refresh
-    } else {
-      //outputChannel.appendLine(`[${timestamp}] Change detected, but filename is undefined.`);
-      //outputChannel.show();
-    }
-  });
+  // フォルダが削除されている等で fs.watch が同期的に例外を投げると、
+  // 呼び出し元の activate() 全体が中断し拡張機能が機能しなくなるため、必ず捕捉する
+  if (!fs.existsSync(folderPath)) {
+    return;
+  }
+  try {
+    fs.watch(folderPath, { recursive: true }, (eventType, filename) => {
+      const timestamp = getTimestamp();
+      if (filename) {
+        //outputChannel.appendLine(`[${timestamp}] Change detected: ${eventType} - ${filename}`);
+        //outputChannel.show();
+        treeProvider.refresh(); // Tree view refresh
+      } else {
+        //outputChannel.appendLine(`[${timestamp}] Change detected, but filename is undefined.`);
+        //outputChannel.show();
+      }
+    });
+  } catch {
+    // フォルダ監視に失敗しても拡張機能自体は起動を継続する
+  }
 }
 
 // Search result hit type
