@@ -96,16 +96,22 @@ code --install-extension "$OUT"
 **セットアップ手順**
 1. VS Codeでこの拡張機能をインストールした状態で、コマンドパレット（`Ctrl+Shift+P`）から **`Excel VBA: Print MCP Server Config (for AI)`** を実行する
 2. 生成されたJSON（クリップボードにコピー済み）を、Claude Codeなら`.mcp.json`、Claude Desktopなら`claude_desktop_config.json`の`mcpServers`に貼り付ける
-3. AIクライアントを再起動すると、`excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `excel_update_module_code`の5ツールが使えるようになる
+3. AIクライアントを再起動すると、`ping` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `excel_update_module_code`の6ツールが使えるようになる
 
 このMCPサーバー（`dist-server/server.js`）はNode単体で動作するため、**VS Codeを開いていなくても**AIクライアントから直接起動・利用できます（ただしExcel本体とVBA実行環境はWindows上に必要です）。
+
+**Excel未起動でも自動解決**
+`excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `excel_update_module_code`はいずれも`workbookPath`（ワークブックのフルパス）を指定できます。指定した場合、Excelが起動していなければ自動的に起動し、対象ブックが未オープンであれば自動的に開いてから操作します。Excelのトラストセンターで「VBAプロジェクトオブジェクトモデルへのアクセスを信頼する」が有効になっている必要があり、無効な場合は`ERR_VBOM_TRUST_DISABLED`という分かりやすいエラーが返ります（この設定はプログラムから自動的に有効化することはできません）。
 
 **書き込み（`excel_update_module_code`）の安全設計**
 - `dryRun:true`でまず呼び出すと、実際には書き込まず、現在のコードとの差分プレビュー＋`confirmToken`が返る
 - 同じ`confirmToken`を付けて再度呼び出すことで、初めて実際にExcelへ書き込まれる（AIが誤って一発で書き込んでしまうことを防ぐ2段階フロー）
 - 書き込み前には自動的に現在のコードがワークブックと同じフォルダの`.excel-vba-sync-backups`にタイムスタンプ付きで退避される
 - Sheet/ThisWorkbookのコードビハインド（Documentモジュール）に書き込んだ場合、ショートカットキー割り当てなどのプロシージャ単位のAttribute情報はVBAのAPI制約上失われる（レスポンスに警告が入る）
-- 対象のExcelファイルが起動していなくても、ワークブックのフルパスを指定すれば自動的にExcelを起動・オープンして操作する（Excelのトラストセンターで「VBAプロジェクトオブジェクトモデルへのアクセスを信頼する」が有効になっている必要がある）
+
+**マクロ実行（`excel_run_macro`）に関する注意**
+- `timeoutMs`（既定30秒）を超えると呼び出しは`ERR_TIMEOUT`で打ち切られるが、これは**こちら側の待ちを止めるだけ**で、`MsgBox`・`InputBox`・フォーム表示等でExcel自体がダイアログ待ちで固まっている状態は解消されない。タイムアウトが出た場合はExcel画面を直接確認すること
+- ツールが`isError`を返さなかった（＝例外を投げずに完走した）からといって、マクロが**意図した通りに**動作したことは保証されない。セル操作・ファイル出力・イミディエイトウィンドウ出力などの結果は、このMCPサーバーからは直接検証できないため、実行後に何を確認すべきかは呼び出し側が判断する必要がある
 
 ## ⚠重要 / Important ##
 

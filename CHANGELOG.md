@@ -9,6 +9,23 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.31] - 2026-07-25
+### ### Added
+- New MCP tool `excel_update_module_code`: lets an AI client (Claude Code/Desktop, etc.) write code into a VBA module. Uses a `dryRun` → `confirmToken` two-step flow (preview the diff and get a token, then re-call with the token to actually apply it), and always takes a timestamped backup to `.excel-vba-sync-backups` next to the workbook before writing. Reuses the same `VBComponents.Import()`-based logic already fixed for issue #3, so Attribute-line handling stays correct; a module of type Document (Sheet/ThisWorkbook) can still lose shortcut-key attributes on write due to the underlying VBA API constraint, and the response says so explicitly.
+- `ExcelUtil.ps1`: `Get-OrStartExcelApplication` (launches Excel if it isn't already running) and `Resolve-TargetWorkbook` (opens a workbook by full path if it isn't already open) so tools no longer require Excel/the target workbook to be manually opened first. All MCP tools gained an optional `workbookPath` parameter to use this.
+- `ExcelUtil.ps1`: `Test-VbaTrustAccess` surfaces a distinct `ERR_VBOM_TRUST_DISABLED` error (instead of silently returning nothing) when Excel's "Trust access to the VBA project object model" setting is off.
+- New command **Excel VBA: Print MCP Server Config (for AI)** generates a ready-to-paste `.mcp.json`/`claude_desktop_config.json` snippet. The MCP server (`dist-server/server.js`) runs as plain Node and can be used by an AI client standalone, without VS Code running.
+- `excel_run_macro` gained `timeoutMs` (default 30s); on timeout the wrapping PowerShell process is killed and `ERR_TIMEOUT` is returned (note: this does not un-stick Excel itself if it's blocked on a dialog).
+- `vba_search_code` gained `maxResults` (default 50); overly broad queries against a large project now return `truncated`/`totalMatchCount` instead of an unbounded result set.
+
+### ### Fixed
+- Fixed extension activation crash when the folder configured via "Set Export Folder" had since been deleted. `fs.watch()` was throwing synchronously (ENOENT) with no error handling, which aborted `activate()` before commands registered later (Export/Import/etc.) ever got wired up — the window would open but none of those commands would work.
+- Tool failure responses are now consistently signaled at the MCP protocol level (`isError: true`) instead of only being visible by inspecting the JSON body — this covers both `{error: "ERR_..."}` and general `{ok: false, ...}` payloads, and also recovers the real error detail from a script's stdout when PowerShell exits non-zero (previously collapsed into a generic "ps failed" message).
+- `excel_list_macros` list-mode response unified to `{ok, macros, count}` instead of a bare array with no success/error envelope.
+
+### ### Known limitations
+- `ok: true` / no error only means the underlying script completed without throwing — it does not confirm a macro did what was intended (cell writes, file output, Immediate window output aren't observable through these tools). See the README's AI client section for more detail.
+
 ## [0.0.30] - 2026-07-25
 ### ### Fixed
 - Fixed Marketplace README rendering: replaced shields.io `visual-studio-marketplace` badges (retired by shields.io, showing as broken placeholders) with `vsmarketplacebadges.dev` equivalents, and removed stray tab characters inside markdown table cells that were breaking table rendering.
