@@ -1,7 +1,7 @@
 ﻿# 📤 EXCEL VBA module Sync - VSCode ⇄ Excel
-![Installs](https://img.shields.io/visual-studio-marketplace/i/9kv8xiyi.excel-vba-sync)
-![Version](https://img.shields.io/visual-studio-marketplace/v/9kv8xiyi.excel-vba-sync)
-![Rating](https://img.shields.io/visual-studio-marketplace/r/9kv8xiyi.excel-vba-sync)
+![Installs](https://vsmarketplacebadges.dev/installs/9kv8xiyi.excel-vba-sync.svg)
+![Version](https://vsmarketplacebadges.dev/version/9kv8xiyi.excel-vba-sync.svg)
+![Rating](https://vsmarketplacebadges.dev/rating-short/9kv8xiyi.excel-vba-sync.svg)
 
 ## 概要（Japanese）
 
@@ -25,8 +25,8 @@ VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内�
 | Export All Modules From VBA    | 開いているExcel から全モジュールを抽出・保存|
 | Import Module To VBA           | VSCode 上で編集したコードを Excel に反映（単独モジュール/ファイル） |
 | Set Export Folder              | エクスポート先フォルダをダイアログにて選択      |
-| Excel VBA: List & Run Macro    | 	開いているブックより指定マクロを実行   |
-| Excel VBA: Search VBA Code	   | 開いているブック・モジュール対象にコード検索（正規表現対応） |
+| Excel VBA: List & Run Macro    | 開いているブックより指定マクロを実行   |
+| Excel VBA: Search VBA Code     | 開いているブック・モジュール対象にコード検索（正規表現対応） |
 | Generate VBA Flow Chart        | エクスポート先フォルダに mmdフォルダを作成し、マーメイド形式(*.mmd)で簡易フローチャートを出力 （実験的機能）|
 | コマンドパレット／ボタン対応      | GUI 操作または `Ctrl+Shift+P` から実行可  |
 ---
@@ -53,8 +53,8 @@ Works in a Windows 10/11 + Excel + VS Code environment only.
 | Export All Modules From VBA    | Extract and save all VBA modules from opened Excel                      |
 | Import Module To VBA           | Reflect modified code back to opended Excel(Module-based/File-based) |
 | Set Export Folder              | Change export folder via Dialog                                  |
-| Excel VBA: List & Run Macro	   | Execute macros by name or fully qualified path in the open workbook| 
-| Excel VBA: Search VBA Code	   | Search VBA code in the open workbook (with regex support)        |
+| Excel VBA: List & Run Macro     | Execute macros by name or fully qualified path in the open workbook| 
+| Excel VBA: Search VBA Code      | Search VBA code in the open workbook (with regex support)        |
 | Generate VBA Flow Chart (Experimental) | Create an mmd folder in the export destination and output a simple flowchart in Mermaid format (*.mmd). |
 | Command Palette / GUI support  | Use commands or side panel buttons                               | 
 ---
