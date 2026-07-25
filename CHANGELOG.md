@@ -13,6 +13,7 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### ### Fixed
 - Fixed garbled Japanese description text for the "Export Folder" setting in `package.json` (#2).
 - Fixed import failure (`Attribute <proc>.VB_ProcData.VB_Invoke_Func`) when importing a module containing a procedure with an assigned macro shortcut key. Standard/class module import (`.bas`/`.cls`) now uses `VBComponents.Import()` — the same approach already used for `.frm` — instead of `CodeModule.AddFromString()`, so all Attribute lines (including shortcut key assignments) are preserved on import (#3).
+- Fixed a non-fatal `PropertyNotFound` error ("プロパティ 'Visible' が見つかりません") logged to the Output channel during export, caused by `$excel.VBE.MainWindow` sometimes not being available yet (e.g. VBE never opened in the session) when the script tried to bring it to the foreground. The assignment is now wrapped in `try/catch` in `export_opened_vba.ps1`.
 
 ### ### Improved
 - Hardened the flowchart generation pipeline: escaped single quotes in PowerShell command arguments (paths containing `'` no longer break the command), verify the intermediate `.flow.json` file actually exists before running the Mermaid conversion step, and surface failures via error/info popups in addition to the Output channel.

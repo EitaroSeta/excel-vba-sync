@@ -100,7 +100,9 @@ $excel.Visible = $true
 Start-Sleep -Milliseconds 300
 
 # VBE を可視化・プロジェクトウィンドウにフォーカス
-$excel.VBE.MainWindow.Visible = $true
+# $excel.VBE.MainWindow がまだ生成されていないタイミング（VBEが一度も開かれていない等）では
+# プロパティ自体が存在せずエラーになるため、致命的ではないので握りつぶす
+try { $excel.VBE.MainWindow.Visible = $true } catch {}
 foreach ($window in $excel.VBE.Windows) {
     if ($window.Caption -like "*Project*") {
         $window.SetFocus() 
