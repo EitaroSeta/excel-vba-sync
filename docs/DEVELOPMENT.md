@@ -5,6 +5,11 @@
 This section is unnecessary for extension users. It serves as a memo for the author when developing or modifying the extension.
 https://github.com/EitaroSeta/excel-vba-sync
 
+## 開発体制について / About the development process
+v0.0.28以降の実装は、Claude（Anthropic）とのAI協働（いわゆる「vibe coding」）によって行われています。設計判断・実装・検証は都度人間が確認していますが、コードの大部分はAIエージェントが生成したものです。
+
+Since v0.0.28, implementation has been done via AI-assisted development ("vibe coding") in collaboration with Claude (Anthropic). Design decisions, implementation, and verification are reviewed by a human at each step, but most of the code is AI-generated.
+
 ## 前提 / Requirements
 - Windows10/11 + Microsoft Excel（VBA を実行するため）
 - Windows PowerShell 5.1/v2025.2.0（PowerShell 7 は未検証）

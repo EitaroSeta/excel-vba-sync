@@ -150,5 +150,9 @@ This extension is provided "as is", without warranty of any kind. The author acc
 
 This section is unnecessary for extension users. See **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** for build/dev setup, packaging, localization, and the architecture diagram.
 
+**開発体制について**: v0.0.28以降の実装は、Claude（Anthropic）とのAI協働（vibe coding）によって行われています。詳細は[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)を参照してください。
+
+**About the development process**: Since v0.0.28, implementation has been done via AI-assisted development ("vibe coding") with Claude (Anthropic). See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for details.
+
 https://github.com/EitaroSeta/excel-vba-sync
 

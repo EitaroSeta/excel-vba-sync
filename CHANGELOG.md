@@ -4,10 +4,16 @@ All notable changes to the "excel-vba-sync" extension are documented here.
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+**Note on development process**: Since v0.0.28, implementation has been done via AI-assisted development ("vibe coding") with Claude (Anthropic), reviewed by a human at each step. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for details.
+
 ## [Unreleased]
 ### Planned
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
+
+## [0.0.42] - 2026-07-26
+### ### Added
+- Disclosed the AI-assisted ("vibe coding" with Claude/Anthropic) development process since v0.0.28 in `CHANGELOG.md`, `README.md`, and `docs/DEVELOPMENT.md`, for transparency. No functional code changes in this release.
 
 ## [0.0.41] - 2026-07-26
 ### ### Added
