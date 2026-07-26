@@ -7,7 +7,10 @@
 **セットアップ手順**
 1. VS Codeでこの拡張機能をインストールした状態で、コマンドパレット（`Ctrl+Shift+P`）から **`Excel VBA: Print MCP Server Config (for AI)`** を実行する
 2. 生成されたJSON（クリップボードにコピー済み）を、Claude Codeなら`.mcp.json`、Claude Desktopなら`claude_desktop_config.json`の`mcpServers`に貼り付ける
-3. AIクライアントを再起動すると、`ping` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `excel_update_module_code`の6ツールが使えるようになる
+3. AIクライアントを再起動すると、`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `excel_update_module_code`の7ツールが使えるようになる
+
+**「モジュール一覧が欲しいだけ」なら`excel_list_modules`を使う**
+モジュール名・種別・行数だけが欲しい場合、`vba_search_code`に`.*`のような全行マッチの正規表現を投げるのは避けてください。コード内容を全く読まずに軽量・高速に一覧を返す`excel_list_modules`が専用に用意されています（実際にCopilot Chatのエージェントがこの目的で`vba_search_code`を力技で使い、巨大な結果でエラーになった実例があったため追加されました）。
 
 このMCPサーバー（`dist-server/server.js`）はNode単体で動作するため、**VS Codeを開いていなくても**AIクライアントから直接起動・利用できます（ただしExcel本体とVBA実行環境はWindows上に必要です）。
 

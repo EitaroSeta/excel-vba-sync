@@ -148,6 +148,72 @@ try {
   }
 );
 
+server.tool(
+  "excel_list_modules",
+  "List the VBA modules in a workbook (name, component type, and line count) without scanning any code content -- cheap and fast compared to vba_search_code. Use this instead of vba_search_code when you just need to know what modules exist, before deciding what to read/search/run. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const dotSource = dotSourceExcelUtil();
+
+    const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { Test-VbaTrustAccess -Workbook $wb | Out-Null }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try {
+  $mods = @()
+  foreach ($c in @($wb.VBProject.VBComponents)) {
+    $vbType = $c.Type   # 1:StdModule, 2:Class, 3:MSForm, 100:Document(Worksheet/ThisWorkbook)
+    $ext = switch ($vbType) {
+      1 { 'bas' }
+      3 { 'frm' }
+      default { 'cls' }
+    }
+    $lineCount = 0
+    try { $lineCount = $c.CodeModule.CountOfLines } catch {}
+    $mods += [pscustomobject]@{ name=$c.Name; componentType=$vbType; exportExt=$ext; lines=$lineCount }
+  }
+  $res = @{ ok=$true; workbook=$wb.Name; modules=$mods; count=$mods.Count }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 6
+} catch {
+  @{ ok=$false; error='list_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+    try {
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+        { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2 * 1024 * 1024 }
+      );
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
+      return extractFailureResult(e);
+    }
+  }
+);
+
 // Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å° excel_list_macros Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°
 server.tool(
   "excel_list_macros",

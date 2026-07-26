@@ -11,6 +11,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.44] - 2026-07-26
+### ### Added
+- New tool `excel_list_modules`: lists a workbook's VBA modules (name, component type, line count) without scanning any code content. Prompted by a real Copilot Chat session where the agent had no direct way to answer "what modules does this workbook have" and improvised by calling `vba_search_code` with a match-everything regex (`.*`) and `maxResults: 5000`, producing an ~800KB result that failed with a `ps_failed` error in that environment (reproduced independently: the same call succeeded via this project's own MCP connection but returned a huge, truncated payload) -- the agent then fell back to writing raw ad-hoc PowerShell outside the extension's tools entirely. `excel_list_modules` gives agents a cheap, purpose-built way to answer that question directly instead.
+
 ## [0.0.43] - 2026-07-26
 ### ### Fixed
 - Confirmed live in Copilot Chat's agent-mode tools picker: `contributes.mcpServerDefinitionProviders` (v0.0.41) works without needing an explicit `onStartupFinished` activation event -- VS Code activated the extension and registered the server automatically. However, the picker showed only the raw MCP server name ("vba-excel-mcp", from `McpServer`'s `name` field in server.ts) with no description, unlike built-in tools which show a one-line explanation.
