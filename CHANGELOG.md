@@ -11,6 +11,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.48] - 2026-07-26
+### ### Added
+- Documented in `docs/AI_USAGE.md` the concrete differences in behavior depending on whether the target workbook is already open, Excel is running without it open, or Excel isn't running at all: a state/behavior table, what `launchedExcelPid`'s presence or absence actually signals, and that resolving by `workbook` (display name only, no `workbookPath`) only works when the workbook is already open. No functional code changes.
+
 ## [0.0.47] - 2026-07-26
 ### ### Changed
 - Made the MCP/AI-agent integration more prominent in `README.md`'s overview (both languages): a highlighted callout now summarizes read/search/run/write support, the `dryRun`/`confirmToken` write safety flow, and multi-client optimistic concurrency control, right after the top-level description instead of only inside the later "Use from an AI client" section. Added the "Print MCP Server Config" command to both feature lists. No functional code changes.
