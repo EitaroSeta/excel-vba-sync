@@ -27,15 +27,14 @@ VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内�
 
 ### 🔧 主な機能
 
-| 機能                           | 説明                                      |
-|--------------------------------|-------------------------------------------|
-| Export All Modules From VBA    | 開いているExcel から全モジュールを抽出・保存|
-| Import Module To VBA           | VSCode 上で編集したコードを Excel に反映（単独モジュール/ファイル） |
-| Set Export Folder              | エクスポート先フォルダをダイアログにて選択      |
-| Excel VBA: List & Run Macro    | 開いているブックより指定マクロを実行   |
-| Excel VBA: Search VBA Code     | 開いているブック・モジュール対象にコード検索（正規表現対応） |
-| Generate VBA Flow Chart        | エクスポート先フォルダに mmdフォルダを作成し、マーメイド形式(*.mmd)で簡易フローチャートを出力 （実験的機能）|
-| コマンドパレット／ボタン対応      | GUI 操作または `Ctrl+Shift+P` から実行可  |
+- **Export All Modules From VBA** — 開いているExcel から全モジュールを抽出・保存
+- **Import Module To VBA** — VSCode 上で編集したコードを Excel に反映（単独モジュール/ファイル）
+- **Set Export Folder** — エクスポート先フォルダをダイアログにて選択
+- **Excel VBA: List & Run Macro** — 開いているブックより指定マクロを実行
+- **Excel VBA: Search VBA Code** — 開いているブック・モジュール対象にコード検索（正規表現対応）
+- **Generate VBA Flow Chart**（実験的機能） — エクスポート先フォルダに mmdフォルダを作成し、マーメイド形式(*.mmd)で簡易フローチャートを出力
+- **コマンドパレット／ボタン対応** — GUI 操作または `Ctrl+Shift+P` から実行可
+
 ---
 
 ## Overview (English)
@@ -55,15 +54,14 @@ Works in a Windows 10/11 + Excel + VS Code environment only.
 
 ### 🔧 Features
 
-| Feature                        | Description                                      |
-|--------------------------------|------------------------------------------------------------------|
-| Export All Modules From VBA    | Extract and save all VBA modules from opened Excel                      |
-| Import Module To VBA           | Reflect modified code back to opended Excel(Module-based/File-based) |
-| Set Export Folder              | Change export folder via Dialog                                  |
-| Excel VBA: List & Run Macro     | Execute macros by name or fully qualified path in the open workbook| 
-| Excel VBA: Search VBA Code      | Search VBA code in the open workbook (with regex support)        |
-| Generate VBA Flow Chart (Experimental) | Create an mmd folder in the export destination and output a simple flowchart in Mermaid format (*.mmd). |
-| Command Palette / GUI support  | Use commands or side panel buttons                               | 
+- **Export All Modules From VBA** — Extract and save all VBA modules from opened Excel
+- **Import Module To VBA** — Reflect modified code back to opened Excel (module-based/file-based)
+- **Set Export Folder** — Change export folder via dialog
+- **Excel VBA: List & Run Macro** — Execute macros by name or fully qualified path in the open workbook
+- **Excel VBA: Search VBA Code** — Search VBA code in the open workbook (with regex support)
+- **Generate VBA Flow Chart** (Experimental) — Create an mmd folder in the export destination and output a simple flowchart in Mermaid format (*.mmd)
+- **Command Palette / GUI support** — Use commands or side panel buttons
+
 ---
 ## <a id="install"></a>🧩 インストール（VSIX） / Install from VSIX
 

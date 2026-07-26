@@ -9,6 +9,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.39] - 2026-07-26
+### ### Fixed
+- The v0.0.38 CRLF-to-LF normalization did not fix the broken feature tables either (confirmed by re-checking the live page at v0.0.38 -- identical symptom). Since headings and bullet lists render correctly on the Marketplace page but pipe-delimited tables consistently collapse into a single plain paragraph regardless of anchor placement or line-ending style, the most likely explanation is that the Marketplace README renderer does not support GFM pipe tables at all. Replaced both feature tables ("主な機能" / "Features") with bullet lists in the same style as the bullet list already used above them (which does render correctly), instead of continuing to chase table-syntax fixes.
+
 ## [0.0.38] - 2026-07-26
 ### ### Fixed
 - The v0.0.36 anchor-inlining fix did not actually resolve the broken feature tables on the Marketplace page (confirmed by re-checking the live page at v0.0.36). The real cause was that `README.md` used CRLF line endings throughout, leaving a stray trailing `\r` on every line -- including the table's delimiter row (`|---|---|`). Headings and bullet lists tolerate a trailing `\r` invisibly, but the delimiter-row check used by the Marketplace renderer's table parser apparently does not, so the whole table fell back to being rendered as one plain paragraph of pipe-delimited text. Normalized `README.md` to LF line endings, which should let the tables parse correctly.
