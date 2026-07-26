@@ -11,6 +11,12 @@
 
 このMCPサーバー（`dist-server/server.js`）はNode単体で動作するため、**VS Codeを開いていなくても**AIクライアントから直接起動・利用できます（ただしExcel本体とVBA実行環境はWindows上に必要です）。
 
+**VS Code自身のCopilot Chat（エージェントモード）からの利用**
+上記のセットアップ手順は外部AIクライアント（Claude Code/Desktopなど）向けです。VS Code自体に組み込まれたAIクライアント（Copilot Chatのエージェントモード等）向けには、`contributes.mcpServerDefinitionProviders`経由でこの拡張機能自身がMCPサーバーを自動的に登録します。手動での`.mcp.json`設定は不要で、拡張機能をインストールするだけで検出されます（起動される内容は上記の手動設定と同一）。
+
+**複数クライアント同時利用時の注意**
+Claude Code/Desktop（手動設定）とVS Code内蔵のAIクライアント（自動検出）を同時に使う場合、それぞれが独立した`server.js`プロセスを起動します（MCPの標準的な設計であり不具合ではありません）。同時に複数のクライアントがExcel操作を行うと、上記「複数Excelプロセスに関する注意」のリスクが顕在化しやすくなる点にご留意ください。
+
 **Excel未起動でも自動解決**
 `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `excel_update_module_code`はいずれも`workbookPath`（ワークブックのフルパス）を指定できます。指定した場合、Excelが起動していなければ自動的に起動し、対象ブックが未オープンであれば自動的に開いてから操作します。Excelのトラストセンターで「VBAプロジェクトオブジェクトモデルへのアクセスを信頼する」が有効になっている必要があり、無効な場合は`ERR_VBOM_TRUST_DISABLED`という分かりやすいエラーが返ります（この設定はプログラムから自動的に有効化することはできません）。
 

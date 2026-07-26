@@ -731,6 +731,43 @@ export function activate(context: vscode.ExtensionContext) {
   channel = vscode.window.createOutputChannel("VBA Tools");
   context.subscriptions.push(channel);
 
+  // Register this extension's MCP server with VS Code's own MCP server discovery
+  // (contributes.mcpServerDefinitionProviders below), so clients built into VS Code
+  // itself (e.g. Copilot Chat's agent mode) can find and start it automatically --
+  // in addition to, not instead of, the existing manual .mcp.json / claude_desktop_config.json
+  // route via the "Print MCP Server Config" command below, which external apps like
+  // Claude Code/Desktop still need since they cannot see this contribution point.
+  // Guarded: this API may not exist on older VS Code versions. An unguarded call here
+  // would throw during activate() and, per the fs.watch() crash fixed earlier, silently
+  // disable every command registered after it -- so this must never throw uncaught.
+  try {
+    const lm = (vscode as unknown as { lm?: typeof vscode.lm }).lm;
+    if (lm && typeof lm.registerMcpServerDefinitionProvider === "function") {
+      const serverJs = path.join(context.extensionPath, "dist-server", "server.js");
+      const scriptsDir = path.join(context.extensionPath, "scripts");
+      context.subscriptions.push(
+        lm.registerMcpServerDefinitionProvider("excel-vba-sync.mcpServers", {
+          provideMcpServerDefinitions: () => [
+            new vscode.McpStdioServerDefinition(
+              "Excel VBA Sync",
+              process.execPath,
+              [serverJs],
+              {
+                MCP_SCRIPTS_DIR: scriptsDir,
+                // process.execPath points at VS Code's own Code.exe; without this,
+                // the editor would launch it as a normal VS Code window instead of
+                // running server.js as plain Node (same reasoning as printMcpConfig below).
+                ELECTRON_RUN_AS_NODE: "1",
+              }
+            ),
+          ],
+        })
+      );
+    }
+  } catch (e) {
+    channel.appendLine(`[excel-vba-sync] mcpServerDefinitionProviders registration skipped: ${e}`);
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand("excelVbaSync.searchAndJump", async () => {
       await cmdSearchAndJump();         // ← 引数で渡さない
