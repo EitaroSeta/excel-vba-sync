@@ -745,6 +745,8 @@ export function activate(context: vscode.ExtensionContext) {
     if (lm && typeof lm.registerMcpServerDefinitionProvider === "function") {
       const serverJs = path.join(context.extensionPath, "dist-server", "server.js");
       const scriptsDir = path.join(context.extensionPath, "scripts");
+      const listPs = path.join(scriptsDir, "FindAndRun-ExcelMacroByModule.ps1");
+      const runPs = listPs;
       context.subscriptions.push(
         lm.registerMcpServerDefinitionProvider("excel-vba-sync.mcpServers", {
           provideMcpServerDefinitions: () => [
@@ -753,6 +755,13 @@ export function activate(context: vscode.ExtensionContext) {
               process.execPath,
               [serverJs],
               {
+                // Must match printMcpConfig's env exactly -- excel_list_macros/excel_run_macro
+                // read MCP_PS_LIST/MCP_PS_RUN directly (not via MCP_SCRIPTS_DIR), so omitting
+                // them here made those two tools fail with "MCP_PS_LIST not set" specifically
+                // when invoked through this provider (VS Code's own MCP clients), while tools
+                // that only need MCP_SCRIPTS_DIR worked fine and masked the gap.
+                MCP_PS_LIST: listPs,
+                MCP_PS_RUN: runPs,
                 MCP_SCRIPTS_DIR: scriptsDir,
                 // process.execPath points at VS Code's own Code.exe; without this,
                 // the editor would launch it as a normal VS Code window instead of

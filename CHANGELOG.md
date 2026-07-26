@@ -11,6 +11,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.46] - 2026-07-26
+### ### Fixed
+- Found the real root cause of the "excel_list_macros doesn't respond" reports (v0.0.45's fix was real but incomplete): the `contributes.mcpServerDefinitionProviders` registration added in v0.0.41 set `MCP_SCRIPTS_DIR` but never set `MCP_PS_LIST`/`MCP_PS_RUN` in the spawned server's environment. `excel_list_macros` and `excel_run_macro` read `MCP_PS_LIST`/`MCP_PS_RUN` directly (not via `MCP_SCRIPTS_DIR`), so both tools failed immediately with `MCP_PS_LIST not set` specifically when invoked through this provider (VS Code's own MCP clients, e.g. Copilot Chat) -- while `excel_list_modules`, `excel_get_module_code`, `excel_update_module_code`, and `vba_search_code` all worked fine (they only need `MCP_SCRIPTS_DIR`), which is exactly why this went unnoticed until a user tried listing macros through Copilot Chat specifically. The confusing parallel-call symptom reported earlier was very likely several agent attempts all hitting this same immediate error, not an actual concurrency bug -- a live 4-way parallel test against this project's own MCP connection (which has always had `MCP_PS_LIST` set correctly) succeeded without issue. Fixed by setting `MCP_PS_LIST`/`MCP_PS_RUN` to match `printMcpConfig`'s environment exactly.
+
 ## [0.0.45] - 2026-07-26
 ### ### Fixed
 - Reported as "excel_list_macros doesn't respond" in a Copilot Chat session: `moduleName` was a required parameter, so a request for "the whole workbook's macros" (with no specific module in mind) most likely caused the agent to loop over every module one call at a time -- each call independently re-resolving/re-launching Excel. Live testing here reproduced auto-launched Excel instances not persisting reliably between consecutive calls, so 13 sequential single-module calls could plausibly take long enough in total to look like no response ever came back.
