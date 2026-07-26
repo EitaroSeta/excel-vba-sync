@@ -11,6 +11,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.45] - 2026-07-26
+### ### Fixed
+- Reported as "excel_list_macros doesn't respond" in a Copilot Chat session: `moduleName` was a required parameter, so a request for "the whole workbook's macros" (with no specific module in mind) most likely caused the agent to loop over every module one call at a time -- each call independently re-resolving/re-launching Excel. Live testing here reproduced auto-launched Excel instances not persisting reliably between consecutive calls, so 13 sequential single-module calls could plausibly take long enough in total to look like no response ever came back.
+
+### ### Added
+- `excel_list_macros`'s `moduleName` is now optional: omit it to list runnable procedures across every module in the target workbook in a single call, resolving Excel/the workbook only once instead of once per module. `FindAndRun-ExcelMacroByModule.ps1`'s module-name filter is skipped when not supplied. Verified live: a single call with only `workbookPath` returned 30 macros spanning all 8 code-containing modules of the test workbook, matching what the same modules return individually.
+
 ## [0.0.44] - 2026-07-26
 ### ### Added
 - New tool `excel_list_modules`: lists a workbook's VBA modules (name, component type, line count) without scanning any code content. Prompted by a real Copilot Chat session where the agent had no direct way to answer "what modules does this workbook have" and improvised by calling `vba_search_code` with a match-everything regex (`.*`) and `maxResults: 5000`, producing an ~800KB result that failed with a `ps_failed` error in that environment (reproduced independently: the same call succeeded via this project's own MCP connection but returned a huge, truncated payload) -- the agent then fell back to writing raw ad-hoc PowerShell outside the extension's tools entirely. `excel_list_modules` gives agents a cheap, purpose-built way to answer that question directly instead.

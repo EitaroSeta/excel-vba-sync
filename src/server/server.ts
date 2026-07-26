@@ -217,9 +217,9 @@ try {
 // Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å° excel_list_macros Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°
 server.tool(
   "excel_list_macros",
-  "List runnable procedures (Subs; module-level Public or implicitly-public -- Private/Friend are excluded, and Functions are not listed) in a VBA module, each with a fully-qualified name usable directly as the 'qualified' argument to excel_run_macro. Scans all currently open workbooks for a module with this name unless workbookPath narrows it to one specific file (auto-launching/opening it if needed).",
+  "List runnable procedures (Subs; module-level Public or implicitly-public -- Private/Friend are excluded, and Functions are not listed) in one VBA module, or in every module of the workbook at once if moduleName is omitted -- prefer omitting moduleName over calling this once per module when you need the whole workbook's macros, since each call re-resolves Excel/the workbook. Each result includes a fully-qualified name usable directly as the 'qualified' argument to excel_run_macro. Scans all currently open workbooks for a matching module unless workbookPath narrows it to one specific file (auto-launching/opening it if needed).",
   {
-    moduleName: z.string().describe("VBA module name to enumerate procedures in."),
+    moduleName: z.string().optional().describe("VBA module name to enumerate procedures in. Omit to list macros from every module in the target workbook in a single call."),
     basPath: z.string().optional().describe("Optional: full path to a previously-exported .bas file for this module; if given, its content hash is used to disambiguate which open workbook to target when multiple books have a same-named module."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed, instead of requiring it to already be open."),
   },
@@ -239,9 +239,11 @@ server.tool(
       "-STA",
       "-ExecutionPolicy", "Bypass",
       "-File", ps,
-      "-ModuleName", params.moduleName,
       "-ListOutput","JSON"
     ];
+    if (params.moduleName) {
+        args.push("-ModuleName", params.moduleName);
+    }
     if (params.basPath) {
         args.push("-BasPath", params.basPath);
     }

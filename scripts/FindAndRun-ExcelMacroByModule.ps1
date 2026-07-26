@@ -60,7 +60,8 @@
 [CmdletBinding(DefaultParameterSetName='ByName')]
 param(
   # === ByName（一覧/名前指定）===
-  [Parameter(Mandatory=$true, ParameterSetName='ByName')]
+  # ModuleName省略時は対象ワークブックの全モジュールを一覧対象にする（一括取得モード）
+  [Parameter(ParameterSetName='ByName')]
   [string]$ModuleName,
 
   [Parameter(ParameterSetName='ByName')]
@@ -216,7 +217,7 @@ try {
       $vbp = Invoke-Com { $wb.VBProject }
       $comps = Invoke-Com { @($vbp.VBComponents) }
       foreach ($c in $comps) {
-        if ((Invoke-Com { $c.Name }) -ne $ModuleName) { continue }
+        if ($ModuleName -and (Invoke-Com { $c.Name }) -ne $ModuleName) { continue }
         $results += Get-ModulePublicSubs -VBComponent $c -WorkbookName (Invoke-Com { $wb.Name })
       }
     } catch {
