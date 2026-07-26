@@ -11,6 +11,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.47] - 2026-07-26
+### ### Changed
+- Made the MCP/AI-agent integration more prominent in `README.md`'s overview (both languages): a highlighted callout now summarizes read/search/run/write support, the `dryRun`/`confirmToken` write safety flow, and multi-client optimistic concurrency control, right after the top-level description instead of only inside the later "Use from an AI client" section. Added the "Print MCP Server Config" command to both feature lists. No functional code changes.
+
 ## [0.0.46] - 2026-07-26
 ### ### Fixed
 - Found the real root cause of the "excel_list_macros doesn't respond" reports (v0.0.45's fix was real but incomplete): the `contributes.mcpServerDefinitionProviders` registration added in v0.0.41 set `MCP_SCRIPTS_DIR` but never set `MCP_PS_LIST`/`MCP_PS_RUN` in the spawned server's environment. `excel_list_macros` and `excel_run_macro` read `MCP_PS_LIST`/`MCP_PS_RUN` directly (not via `MCP_SCRIPTS_DIR`), so both tools failed immediately with `MCP_PS_LIST not set` specifically when invoked through this provider (VS Code's own MCP clients, e.g. Copilot Chat) -- while `excel_list_modules`, `excel_get_module_code`, `excel_update_module_code`, and `vba_search_code` all worked fine (they only need `MCP_SCRIPTS_DIR`), which is exactly why this went unnoticed until a user tried listing macros through Copilot Chat specifically. The confusing parallel-call symptom reported earlier was very likely several agent attempts all hitting this same immediate error, not an actual concurrency bug -- a live 4-way parallel test against this project's own MCP connection (which has always had `MCP_PS_LIST` set correctly) succeeded without issue. Fixed by setting `MCP_PS_LIST`/`MCP_PS_RUN` to match `printMcpConfig`'s environment exactly.

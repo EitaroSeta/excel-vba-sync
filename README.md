@@ -16,6 +16,8 @@
 VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内容のVBAへのインポートが行えます。  
 **Winsdows10/11＋Excel＋VSCode環境でのみ動作します。**
 
+> 🤖 **AIエージェント連携（MCP対応）**：Claude Code・Claude Desktop・VS Code内蔵のCopilot Chatなど、[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)に対応したAIクライアントから、VBAコードの読み取り・検索・マクロ実行に加えて**コードの書き込み**までを行えます。書き込みは`dryRun`→`confirmToken`の2段階確認フロー・書き込み前の自動バックアップ・複数クライアント同時利用時の楽観的排他制御を備えた設計です。詳細は[🤖 AIクライアントから使う](#ai-usage)を参照。
+
 - ✅ 開いているExcelブックから `.bas` / `.cls` / `.frm` 内のコードをエクスポート（保存）
 - ✅ VSCode 上で編集
 - ✅ 編集したモジュールを 開いているExcelブック にインポート（反映）
@@ -33,6 +35,7 @@ VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内�
 - **Excel VBA: List & Run Macro** — 開いているブックより指定マクロを実行
 - **Excel VBA: Search VBA Code** — 開いているブック・モジュール対象にコード検索（正規表現対応）
 - **Generate VBA Flow Chart**（実験的機能） — エクスポート先フォルダに mmdフォルダを作成し、マーメイド形式(*.mmd)で簡易フローチャートを出力
+- **Excel VBA: Print MCP Server Config (for AI)** — AIクライアント（Claude Code/Desktop等）向けのMCP接続設定を生成
 - **コマンドパレット／ボタン対応** — GUI 操作または `Ctrl+Shift+P` から実行可
 
 ---
@@ -42,6 +45,8 @@ VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内�
 **EXCEL VBA module Sync** is a VSCode extension for editing opened Excel VBA modules.  
 You can export VBA modules to VS Code and import the content edited in VS Code back into VBA.
 Works in a Windows 10/11 + Excel + VS Code environment only.
+
+> 🤖 **AI agent integration (MCP)**: From any [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) client — Claude Code, Claude Desktop, or VS Code's own Copilot Chat — read, search, run macros in, and **write** VBA code. Writes go through a two-step `dryRun`/`confirmToken` confirmation flow, an automatic backup before every change, and optimistic concurrency control when multiple clients are active. See [🤖 Use from an AI client](#ai-usage) for details.
 
 - ✅ Export inner code of  `.bas` / `.cls` / `.frm` from opened Excel
 - ✅ Edit VBA modules in VSCode
@@ -60,6 +65,7 @@ Works in a Windows 10/11 + Excel + VS Code environment only.
 - **Excel VBA: List & Run Macro** — Execute macros by name or fully qualified path in the open workbook
 - **Excel VBA: Search VBA Code** — Search VBA code in the open workbook (with regex support)
 - **Generate VBA Flow Chart** (Experimental) — Create an mmd folder in the export destination and output a simple flowchart in Mermaid format (*.mmd)
+- **Excel VBA: Print MCP Server Config (for AI)** — Generate an MCP connection config for AI clients (Claude Code/Desktop, etc.)
 - **Command Palette / GUI support** — Use commands or side panel buttons
 
 ---
