@@ -11,6 +11,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.43] - 2026-07-26
+### ### Fixed
+- Confirmed live in Copilot Chat's agent-mode tools picker: `contributes.mcpServerDefinitionProviders` (v0.0.41) works without needing an explicit `onStartupFinished` activation event -- VS Code activated the extension and registered the server automatically. However, the picker showed only the raw MCP server name ("vba-excel-mcp", from `McpServer`'s `name` field in server.ts) with no description, unlike built-in tools which show a one-line explanation.
+
+### ### Added
+- `McpServer` now also sets `title: "Excel VBA Sync"` (a human-readable display name, per the MCP spec's `Implementation.title` field) and an `instructions` string (`ServerOptions.instructions`) summarizing what the server does and its key usage rules (prefer `workbookPath`, the `dryRun`/`confirmToken` write flow, `ERR_MODULE_CHANGED_SINCE_DRYRUN`). Whether a given MCP client's UI surfaces `title`/`instructions` depends on that client; this is the standard MCP mechanism for a server to self-describe, so it should improve display across clients that support it, not just VS Code's.
+
 ## [0.0.42] - 2026-07-26
 ### ### Added
 - Disclosed the AI-assisted ("vibe coding" with Claude/Anthropic) development process since v0.0.28 in `CHANGELOG.md`, `README.md`, and `docs/DEVELOPMENT.md`, for transparency. No functional code changes in this release.

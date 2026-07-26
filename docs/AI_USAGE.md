@@ -12,7 +12,9 @@
 このMCPサーバー（`dist-server/server.js`）はNode単体で動作するため、**VS Codeを開いていなくても**AIクライアントから直接起動・利用できます（ただしExcel本体とVBA実行環境はWindows上に必要です）。
 
 **VS Code自身のCopilot Chat（エージェントモード）からの利用**
-上記のセットアップ手順は外部AIクライアント（Claude Code/Desktopなど）向けです。VS Code自体に組み込まれたAIクライアント（Copilot Chatのエージェントモード等）向けには、`contributes.mcpServerDefinitionProviders`経由でこの拡張機能自身がMCPサーバーを自動的に登録します。手動での`.mcp.json`設定は不要で、拡張機能をインストールするだけで検出されます（起動される内容は上記の手動設定と同一）。
+上記のセットアップ手順は外部AIクライアント（Claude Code/Desktopなど）向けです。VS Code自体に組み込まれたAIクライアント（Copilot Chatのエージェントモード等）向けには、`contributes.mcpServerDefinitionProviders`経由でこの拡張機能自身がMCPサーバーを自動的に登録します。手動での`.mcp.json`設定は不要で、拡張機能をインストールするだけで検出されます（起動される内容は上記の手動設定と同一）。`onStartupFinished`のような明示的な起動イベントを追加しなくても自動的に有効化されることを、Copilot Chatのツール選択画面で実機確認済みです。
+
+Copilot Chatのツール選択画面には`vba-excel-mcp`という名前（サーバー自身がMCPプロトコルで名乗る識別子）で表示されます。あわせて人間向けの表示名（`title: "Excel VBA Sync"`）と、サーバーの使い方を要約した`instructions`（`workbookPath`を優先すること、`dryRun`/`confirmToken`の書き込みフロー等）も設定していますが、これらをクライアントのUIがどう表示するかはクライアント次第です。
 
 **複数クライアント同時利用時の注意**
 Claude Code/Desktop（手動設定）とVS Code内蔵のAIクライアント（自動検出）を同時に使う場合、それぞれが独立した`server.js`プロセスを起動します（MCPの標準的な設計であり不具合ではありません）。同時に複数のクライアントがExcel操作を行うと、上記「複数Excelプロセスに関する注意」のリスクが顕在化しやすくなる点にご留意ください。

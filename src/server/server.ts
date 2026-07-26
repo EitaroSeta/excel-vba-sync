@@ -11,7 +11,17 @@ const execFileAsync = promisify(execFile);
 
 console.log("# vba-excel-mcp server: booting...");
 
-const server = new McpServer({ name: "vba-excel-mcp", version: "0.1.0" });
+const server = new McpServer(
+  { name: "vba-excel-mcp", title: "Excel VBA Sync", version: "0.1.0" },
+  {
+    instructions:
+      "Read, search, run macros in, and write to VBA modules of Excel workbooks on this Windows machine, via COM automation. " +
+      "Prefer workbookPath (full file path) over workbook (display name) -- it auto-launches Excel and auto-opens the file if needed. " +
+      "excel_update_module_code requires dryRun:true first to preview and get a confirmToken, then a second call with that token to actually write; " +
+      "the token is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN if the module changed in the meantime. " +
+      "A backup of the replaced code is always written before any change.",
+  }
+);
 server.tool("ping", "Health check for the excel-vba-sync MCP server. Returns the literal string 'pong' if the server process is reachable. Does not touch Excel.", {}, async () => ({ content: [{ type: "text", text: "pong" }] }));
 
 const transport = new StdioServerTransport();
