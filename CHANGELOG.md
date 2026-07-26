@@ -9,6 +9,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.40] - 2026-07-26
+### ### Added
+- `excel_update_module_code` now uses optimistic concurrency control: the `confirmToken` returned by a `dryRun:true` call is bound to the module's code as it was at that moment, and the tool re-reads the module immediately before writing to recompute and compare the token. If the code has changed in the meantime (e.g. a different MCP client -- Claude Code, Claude Desktop, or VS Code's own Copilot Chat if it's ever wired up via `mcpServerDefinitionProviders` -- wrote to the same module first), the write is now rejected with `ERR_MODULE_CHANGED_SINCE_DRYRUN` instead of silently overwriting that change. Verified against a live workbook: two independent dry-run/confirm sequences against the same module, where the second write completed first -- the first (now-stale) confirmToken was correctly rejected without touching the second write's content.
+
+### ### Changed
+- `computeConfirmToken`'s formula changed from `hash(workbook, module, newCode)` to `hash(module, currentCode, newCode)` -- it no longer includes the workbook identifier (unnecessary for uniqueness here) but now includes the current code snapshot, which is what makes the concurrency check above possible.
+
 ## [0.0.39] - 2026-07-26
 ### ### Fixed
 - The v0.0.38 CRLF-to-LF normalization did not fix the broken feature tables either (confirmed by re-checking the live page at v0.0.38 -- identical symptom). Since headings and bullet lists render correctly on the Marketplace page but pipe-delimited tables consistently collapse into a single plain paragraph regardless of anchor placement or line-ending style, the most likely explanation is that the Marketplace README renderer does not support GFM pipe tables at all. Replaced both feature tables ("主な機能" / "Features") with bullet lists in the same style as the bullet list already used above them (which does render correctly), instead of continuing to chase table-syntax fixes.

@@ -435,20 +435,97 @@ $searchRes | ConvertTo-Json -Depth 6
 // 実際の書き込みは import_single_module.ps1 経由（= import_opened_vba.ps1 の
 // VBComponents.Import()ベースのロジックを再利用）で行い、CodeModule.AddFromString()を
 // 直接呼ぶことは絶対に行わない（Attribute行を含むコードでコンパイルエラーになるため）。
-function computeConfirmToken(workbook: string, module: string, newCode: string): string {
-  return createHash("sha256").update(`${workbook}\u0000${module}\u0000${newCode}`).digest("hex").slice(0, 16);
+function computeConfirmToken(module: string, currentCode: string, newCode: string): string {
+  return createHash("sha256").update(`${module}\u0000${currentCode}\u0000${newCode}`).digest("hex").slice(0, 16);
+}
+
+// Reads the current source of a VBA module. Shared by excel_update_module_code's
+// dry-run path and by its confirm/write path (re-read immediately before writing,
+// to detect concurrent modification since the dry-run -- see below).
+async function readCurrentModuleCode(
+  wbEscaped: string,
+  wbPathEscaped: string,
+  modEscaped: string
+): Promise<
+  | { ok: true; workbook: string; module: string; componentType: number; currentCode: string; launchedExcelPid?: number }
+  | { ok: false; content: { type: "text"; text: string }[]; isError: true }
+> {
+  const dotSource = dotSourceExcelUtil();
+  const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPathEscaped}' -WorkbookName '${wbEscaped}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { Test-VbaTrustAccess -Workbook $wb | Out-Null }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { $vbc=$wb.VBProject.VBComponents.Item('${modEscaped}') }
+catch { @{ ok=$false; error='module_not_found'; module='${modEscaped}' } | ConvertTo-Json ; exit }
+
+try {
+  $cm=$vbc.CodeModule
+  $code = if ($cm.CountOfLines -gt 0) { $cm.Lines(1, $cm.CountOfLines) } else { "" }
+  $readRes = @{ ok=$true; workbook=$wb.Name; module=$vbc.Name; componentType=$vbc.Type; currentCode=$code }
+  if ($r.LaunchedProcessId) { $readRes.launchedExcelPid = $r.LaunchedProcessId }
+  $readRes | ConvertTo-Json -Depth 6
+} catch {
+  @{ ok=$false; error='read_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+      { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2 * 1024 * 1024 }
+    );
+    const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+    const classified = classifyResult(outText);
+    if (classified.isError) {
+      return { ok: false, content: classified.content, isError: true };
+    }
+
+    let payload: any = null;
+    try {
+      const start = Math.min(...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; }));
+      payload = Number.isFinite(start) ? JSON.parse(outText.slice(start)) : null;
+    } catch { /* noop */ }
+
+    if (!payload?.ok) {
+      return { ok: false, content: [{ type: "text", text: outText }], isError: true };
+    }
+
+    return {
+      ok: true,
+      workbook: payload.workbook,
+      module: payload.module,
+      componentType: payload.componentType,
+      currentCode: payload.currentCode,
+      launchedExcelPid: payload.launchedExcelPid,
+    };
+  } catch (e: any) {
+    return { ok: false, content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
+  }
 }
 
 server.tool(
   "excel_update_module_code",
-  "Overwrite the code of an EXISTING VBA module (cannot create new modules, and cannot target .frm UserForm modules -- fails with ERR_UNSUPPORTED_MODULE_TYPE). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules.",
+  "Overwrite the code of an EXISTING VBA module (cannot create new modules, and cannot target .frm UserForm modules -- fails with ERR_UNSUPPORTED_MODULE_TYPE). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules.",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
     module: z.string().describe("Name of an EXISTING VBA module to overwrite. New modules cannot be created via this tool."),
     newCode: z.string().describe("Full replacement source code for the module (procedure bodies only -- do not include Attribute lines)."),
     dryRun: z.boolean().optional().describe("If true, only preview the change (current vs new code) and return a confirmToken; does not write anything."),
-    confirmToken: z.string().optional().describe("Token obtained from a prior dryRun:true call with the identical workbook/module/newCode. Required to actually perform the write."),
+    confirmToken: z.string().optional().describe("Token obtained from a prior dryRun:true call with the identical workbook/module/newCode. Required to actually perform the write. Rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN if the module's code no longer matches what the dry-run saw."),
   },
   async (params) => {
     const wb = psq(params.workbook ?? "");
@@ -459,94 +536,58 @@ server.tool(
       return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
     }
 
-    const expectedToken = computeConfirmToken(params.workbook ?? params.workbookPath ?? "", params.module, params.newCode);
-
-    // --- dry-run: 現在のコードを読み取り、差分プレビューと確認トークンを返すだけ。書き込みは行わない ---
+    // --- dry-run: read the current code, compute a confirmToken bound to it, do not write anything ---
     if (params.dryRun) {
-      const dotSource = dotSourceExcelUtil();
-      const psScript = `
-$ErrorActionPreference='Stop'
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-$OutputEncoding           = [Console]::OutputEncoding
+      const readResult = await readCurrentModuleCode(wb, wbPath, mod);
+      if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
 
-${dotSource}
-
-try { $r = Get-OrStartExcelApplication; $excel = $r.App }
-catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
-
-try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
-catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
-
-try { Test-VbaTrustAccess -Workbook $wb | Out-Null }
-catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
-
-try { $vbc=$wb.VBProject.VBComponents.Item('${mod}') }
-catch { @{ ok=$false; error='module_not_found'; module='${mod}' } | ConvertTo-Json ; exit }
-
-try {
-  $cm=$vbc.CodeModule
-  $code = if ($cm.CountOfLines -gt 0) { $cm.Lines(1, $cm.CountOfLines) } else { "" }
-  $dryRunRes = @{ ok=$true; workbook=$wb.Name; module=$vbc.Name; componentType=$vbc.Type; currentCode=$code }
-  if ($r.LaunchedProcessId) { $dryRunRes.launchedExcelPid = $r.LaunchedProcessId }
-  $dryRunRes | ConvertTo-Json -Depth 6
-} catch {
-  @{ ok=$false; error='read_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
-}
-`.trim();
-
-      try {
-        const { stdout } = await execFileAsync(
-          "powershell.exe",
-          ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
-          { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2 * 1024 * 1024 }
-        );
-        const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
-        const classified = classifyResult(outText);
-        if (classified.isError) { return classified; }
-
-        let payload: any = null;
-        try {
-          const start = Math.min(...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; }));
-          payload = Number.isFinite(start) ? JSON.parse(outText.slice(start)) : null;
-        } catch { /* noop */ }
-
-        if (!payload?.ok) {
-          return { content: [{ type: "text", text: outText }], isError: true };
-        }
-
-        const preview: Record<string, unknown> = {
-          ok: true,
-          workbook: payload.workbook,
-          module: payload.module,
-          componentType: payload.componentType,
-          currentCode: payload.currentCode,
-          newCode: params.newCode,
-          willLoseShortcutAttributes: payload.componentType === 100,
-          confirmToken: expectedToken,
-          note: "Call this tool again with the same workbook/module/newCode and this confirmToken to apply the write.",
-        };
-        if (payload.launchedExcelPid) { preview.launchedExcelPid = payload.launchedExcelPid; }
-        return { content: [{ type: "text", text: JSON.stringify(preview, null, 2) }] };
-      } catch (e: any) {
-        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
-      }
+      const expectedToken = computeConfirmToken(params.module, readResult.currentCode, params.newCode);
+      const preview: Record<string, unknown> = {
+        ok: true,
+        workbook: readResult.workbook,
+        module: readResult.module,
+        componentType: readResult.componentType,
+        currentCode: readResult.currentCode,
+        newCode: params.newCode,
+        willLoseShortcutAttributes: readResult.componentType === 100,
+        confirmToken: expectedToken,
+        note: "Call this tool again with the same workbook/module/newCode and this confirmToken to apply the write. If the module's code changes before that call (e.g. another client writes to it first), the token will no longer match and the write will be rejected rather than silently overwriting that change.",
+      };
+      if (readResult.launchedExcelPid) { preview.launchedExcelPid = readResult.launchedExcelPid; }
+      return { content: [{ type: "text", text: JSON.stringify(preview, null, 2) }] };
     }
 
-    // --- confirmToken必須（dry-runを経ずにいきなり書き込むことを防ぐ） ---
+    // --- confirmToken required (prevents a blind write without having previewed via dry-run) ---
     if (!params.confirmToken) {
       return {
         content: [{ type: "text", text: JSON.stringify({ ok: false, error: "confirmToken is required. Call this tool with dryRun:true first to preview the change and obtain a confirmToken." }) }],
         isError: true,
       };
     }
+
+    // --- re-read the current code immediately before writing (optimistic concurrency check):
+    // if it no longer matches what the dry-run saw, someone else changed it in the meantime --
+    // reject instead of silently overwriting that change. ---
+    const freshRead = await readCurrentModuleCode(wb, wbPath, mod);
+    if (!freshRead.ok) { return { content: freshRead.content, isError: freshRead.isError }; }
+
+    const expectedToken = computeConfirmToken(params.module, freshRead.currentCode, params.newCode);
     if (params.confirmToken !== expectedToken) {
       return {
-        content: [{ type: "text", text: JSON.stringify({ ok: false, error: "confirmToken does not match the current (workbook, module, newCode). The code may have changed since the dry-run; re-run with dryRun:true to get a fresh token." }) }],
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            ok: false,
+            error: "ERR_MODULE_CHANGED_SINCE_DRYRUN",
+            detail: "The module's code has changed since the dry-run (or the confirmToken does not match this workbook/module/newCode). Re-run with dryRun:true to get a fresh token before retrying, to avoid overwriting a change made by another client in the meantime.",
+          }),
+        }],
         isError: true,
       };
     }
 
-    // --- 実書き込み: import_single_module.ps1 経由（Import-ModuleToVBProjectを再利用） ---
+    // --- perform the write via import_single_module.ps1 (reuses Import-ModuleToVBProject; never
+    // call CodeModule.AddFromString() directly here -- it rejects Attribute lines, see issue #3) ---
     const scriptsDir = getScriptsDir();
     if (!scriptsDir) {
       return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "MCP_SCRIPTS_DIR/MCP_PS_LIST not set" }) }], isError: true };
@@ -584,5 +625,4 @@ try {
     }
   }
 );
-
 console.log("# vba-excel-mcp server: ready");
