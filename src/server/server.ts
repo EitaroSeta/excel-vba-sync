@@ -7,7 +7,24 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { createHash } from "node:crypto";
-const execFileAsync = promisify(execFile);
+const execFileAsyncRaw = promisify(execFile);
+// Serializes all Excel-COM-touching PowerShell invocations so concurrent MCP tool
+// calls (e.g. an agent firing off excel_list_modules/excel_list_macros/excel_read_range
+// "in parallel" against the same workbook) can't race each other into each
+// independently deciding Excel isn't running yet and launching its own redundant
+// Excel.exe process -- Get-OrStartExcelApplication's GetActiveObject check has no
+// visibility into another in-flight launch by a sibling call. Queuing every
+// execFileAsync call here means only one PowerShell/COM operation is ever actually
+// running at a time, regardless of how many tool calls arrive concurrently.
+let excelOpQueue: Promise<unknown> = Promise.resolve();
+function execFileAsync(...args: any[]): Promise<any> {
+  const run = excelOpQueue.then(
+    () => (execFileAsyncRaw as any)(...args),
+    () => (execFileAsyncRaw as any)(...args)
+  );
+  excelOpQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
 
 console.log("# vba-excel-mcp server: booting...");
 
