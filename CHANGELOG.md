@@ -11,6 +11,14 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.50] - 2026-07-26
+### ### Added
+- New read-only tool `excel_read_range`: reads cell values from a worksheet range (e.g. `"A1:C10"`) using `Range.Value2`, returned as a row-major 2D array. Unlike the VBA-code tools, this does not require the VBA Trust Center setting (it only touches the normal Excel object model, not VBProject). Intended for an AI agent to verify what a macro it wrote and ran via `excel_run_macro` actually did to the spreadsheet, since that tool alone only confirms the macro completed without throwing -- not that it had the intended effect.
+
+### ### Fixed
+- Caught during implementation (before release): PowerShell 5.1 does not accept a comma-indexed 2D array access (`$raw[$i, $j]`) directly as a method-call argument (`$list.Add($raw[$i, $j])`) -- it's a genuine parser limitation, reproduced independently with a minimal repro script. Fixed by assigning to an intermediate variable first. Verified against the real test workbook after the fix (reading `CIDR!A1:C3` returned the actual cell values correctly).
+- Full round-trip verification through the actual `excel_read_range` MCP tool call is still pending client-side tool-list refresh in this session (the same discovery-lag seen with `excel_list_modules` and `excel_list_macros` when they were first added) -- the underlying PowerShell logic was verified directly against the real workbook instead.
+
 ## [0.0.49] - 2026-07-26
 ### ### Added
 - `excel_update_module_code`'s dry-run response now includes `lintWarnings`: a best-effort, regex-based static check of `newCode` (no real VBA parser) for Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing `Option Explicit`, `UsedRange` dependence, bare `End` statements, procedures over 200 lines, a missing `Set` before an object assignment (CreateObject/New/GetObject), `Declare` without `PtrSafe`, and hardcoded file numbers. Advisory only -- never blocks the write. Verified live: a deliberately-flawed test module triggered all 11 expected warnings with correct rule IDs and line numbers.
