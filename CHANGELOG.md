@@ -11,6 +11,10 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.51] - 2026-07-26
+### ### Fixed
+- Reported live (a `vba_search_code` call with `query: 'Range("A5")'`): a `query` containing a double quote failed with a PowerShell parse error. Root cause: the query was embedded as `$reRaw=${JSON.stringify(params.query)}`, producing a backslash-escaped double-quoted string (JSON/JS convention) -- but PowerShell double-quoted strings don't treat backslash as an escape character, so `\"` closes the string early instead of representing a literal quote. Fixed by embedding the query as a single-quoted PowerShell string with `psq()`'s existing single-quote-doubling escape (the same convention already used for `moduleFilter`/`workbookFilter` on the same tool), which needs no escaping at all for embedded double quotes. Verified live: the original failing query now returns `ok:true`, and a second query containing a literal double-quoted string correctly matched an existing line in the workbook.
+
 ## [0.0.50] - 2026-07-26
 ### ### Added
 - New read-only tool `excel_read_range`: reads cell values from a worksheet range (e.g. `"A1:C10"`) using `Range.Value2`, returned as a row-major 2D array. Unlike the VBA-code tools, this does not require the VBA Trust Center setting (it only touches the normal Excel object model, not VBProject). Intended for an AI agent to verify what a macro it wrote and ran via `excel_run_macro` actually did to the spreadsheet, since that tool alone only confirms the macro completed without throwing -- not that it had the intended effect.

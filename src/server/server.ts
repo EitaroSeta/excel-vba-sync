@@ -479,7 +479,7 @@ if ($workbookPathParam -and $workbookPathParam.Trim().Length -gt 0) {
 }
 
 $hits=@()
-$reRaw=${JSON.stringify(params.query)}
+$reRaw='${psq(params.query)}'
 $useRe=${params.useRegex ? '$true' : '$false'}
 $moduleFilter=${params.moduleFilter ? `'${params.moduleFilter.replace(/'/g,"''")}'` : '$null'}
 $workbookFilter=${params.workbookFilter ? `'${params.workbookFilter.replace(/'/g,"''")}'` : '$null'}
