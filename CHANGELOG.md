@@ -11,6 +11,11 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.49] - 2026-07-26
+### ### Added
+- `excel_update_module_code`'s dry-run response now includes `lintWarnings`: a best-effort, regex-based static check of `newCode` (no real VBA parser) for Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing `Option Explicit`, `UsedRange` dependence, bare `End` statements, procedures over 200 lines, a missing `Set` before an object assignment (CreateObject/New/GetObject), `Declare` without `PtrSafe`, and hardcoded file numbers. Advisory only -- never blocks the write. Verified live: a deliberately-flawed test module triggered all 11 expected warnings with correct rule IDs and line numbers.
+- Documented in the `excel-vba-sync-dev` skill (`references/vba-lint-tiers.md`) the full 40-rule catalog this was scoped from, which rules are implemented (Tier 1, above), which are planned but deferred (Tier 2 -- need per-procedure boundary tracking), and which were rejected for this text-based approach entirely (Tier 3 -- e.g. dead-code/unused-procedure detection, which can't distinguish string-based `Application.Run` calls or event handlers from truly-unused code without much higher false-positive risk).
+
 ## [0.0.48] - 2026-07-26
 ### ### Added
 - Documented in `docs/AI_USAGE.md` the concrete differences in behavior depending on whether the target workbook is already open, Excel is running without it open, or Excel isn't running at all: a state/behavior table, what `launchedExcelPid`'s presence or absence actually signals, and that resolving by `workbook` (display name only, no `workbookPath`) only works when the workbook is already open. No functional code changes.

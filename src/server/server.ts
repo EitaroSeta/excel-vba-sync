@@ -594,9 +594,85 @@ try {
   }
 }
 
+// Tier 1 static checks only (regex/text-based, no real VBA parser). See the
+// excel-vba-sync-dev skill's references/vba-lint-tiers.md for the full 40-rule
+// catalog this is drawn from, and why Tier 2/3 rules are deferred (they need
+// per-procedure boundary tracking or real dataflow analysis to stay low-noise;
+// this simpler pass would false-positive/negative too often on those).
+interface VbaLintWarning {
+  ruleId: string;
+  severity: "Warning" | "Info";
+  line: number;
+  message: string;
+}
+
+function lintVbaCode(code: string): VbaLintWarning[] {
+  const warnings: VbaLintWarning[] = [];
+  const lines = code.split(/\r\n|\r|\n/);
+
+  const simplePatterns: { ruleId: string; severity: "Warning" | "Info"; regex: RegExp; message: string }[] = [
+    { ruleId: "VBA001", severity: "Warning", regex: /\.Select\b/i, message: "Select relies on selection state and can make behavior unstable -- operate on the target object directly instead." },
+    { ruleId: "VBA002", severity: "Warning", regex: /\.Activate\b/i, message: "Activate depends on the active sheet/workbook -- reference the target via a Worksheet variable instead." },
+    { ruleId: "VBA003", severity: "Warning", regex: /\bSelection\b/i, message: "Selection is not guaranteed to be the intended target -- operate on an explicit Range instead." },
+    { ruleId: "VBA004", severity: "Warning", regex: /\bActiveSheet\b/i, message: "ActiveSheet can change due to user action or other code -- reference the target sheet explicitly instead." },
+    { ruleId: "VBA005", severity: "Warning", regex: /\bActiveWorkbook\b/i, message: "ActiveWorkbook may not be the intended workbook -- use ThisWorkbook or an explicit workbook variable instead." },
+    { ruleId: "VBA021", severity: "Warning", regex: /\bUsedRange\b/i, message: "UsedRange can include stale formatting or deleted cells -- compute the last row/column from a specific column instead." },
+    { ruleId: "VBA028", severity: "Warning", regex: /^\s*End\s*(?:'.*)?$/i, message: "A bare End statement skips cleanup/restore code -- use Exit Sub or a unified cleanup routine instead." },
+    { ruleId: "VBA035", severity: "Info", regex: /^\s*Call\s+/i, message: "Call is legacy VBA style -- calling the procedure directly is more idiomatic." },
+    { ruleId: "VBA039", severity: "Warning", regex: /\bAs\s+#\s*\d+/i, message: "A hardcoded file number can collide with other open files -- use FreeFile instead." },
+  ];
+
+  lines.forEach((line, idx) => {
+    const lineNo = idx + 1;
+
+    for (const p of simplePatterns) {
+      if (p.regex.test(line)) {
+        warnings.push({ ruleId: p.ruleId, severity: p.severity, line: lineNo, message: p.message });
+      }
+    }
+
+    // VBA037: Declare ... without PtrSafe (won't compile under 64-bit Office)
+    if (/\bDeclare\s+(Function|Sub)\b/i.test(line) && !/\bPtrSafe\b/i.test(line)) {
+      warnings.push({ ruleId: "VBA037", severity: "Warning", line: lineNo, message: "A Declare statement without PtrSafe won't compile under 64-bit Office -- add PtrSafe (and LongPtr where needed)." });
+    }
+
+    // VBA034: assignment to CreateObject/New/GetObject without a leading Set
+    if (/^\s*(?!Set\b)[A-Za-z_][\w.]*\s*=\s*(New\s+[A-Za-z_]\w*|CreateObject\s*\(|GetObject\s*\()/i.test(line)) {
+      warnings.push({ ruleId: "VBA034", severity: "Warning", line: lineNo, message: "Assigning an object (CreateObject/New/GetObject) without Set is invalid -- add Set." });
+    }
+  });
+
+  // VBA009: Option Explicit missing anywhere in the module
+  if (!/^\s*Option\s+Explicit\b/im.test(code)) {
+    warnings.push({ ruleId: "VBA009", severity: "Warning", line: 1, message: "Option Explicit is missing -- typos in variable names won't be caught at compile time." });
+  }
+
+  // VBA030: procedures longer than 200 lines
+  const procStart = /^\s*(?:Public\s+|Private\s+|Friend\s+)?(?:Sub|Function|Property\s+(?:Get|Let|Set))\s+([A-Za-z_]\w*)/i;
+  const procEnd = /^\s*End\s+(?:Sub|Function|Property)\b/i;
+  let openLine: number | null = null;
+  let openName = "";
+  lines.forEach((line, idx) => {
+    const lineNo = idx + 1;
+    if (openLine === null) {
+      const m = procStart.exec(line);
+      if (m) { openLine = lineNo; openName = m[1]; }
+    } else if (procEnd.test(line)) {
+      const len = lineNo - openLine + 1;
+      if (len > 200) {
+        warnings.push({ ruleId: "VBA030", severity: "Info", line: openLine, message: `Procedure "${openName}" is ${len} lines long -- consider splitting it into smaller procedures for maintainability.` });
+      }
+      openLine = null;
+      openName = "";
+    }
+  });
+
+  return warnings;
+}
+
 server.tool(
   "excel_update_module_code",
-  "Overwrite the code of an EXISTING VBA module (cannot create new modules, and cannot target .frm UserForm modules -- fails with ERR_UNSUPPORTED_MODULE_TYPE). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules.",
+  "Overwrite the code of an EXISTING VBA module (cannot create new modules, and cannot target .frm UserForm modules -- fails with ERR_UNSUPPORTED_MODULE_TYPE). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules. The dry-run response also includes lintWarnings: a best-effort, regex-based static check (not a real VBA parser) for a small set of common issues -- Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing Option Explicit, UsedRange, bare End statements, overly long procedures, missing Set before an object assignment, Declare without PtrSafe, and hardcoded file numbers. These are advisory only and never block the write.",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
@@ -628,6 +704,7 @@ server.tool(
         currentCode: readResult.currentCode,
         newCode: params.newCode,
         willLoseShortcutAttributes: readResult.componentType === 100,
+        lintWarnings: lintVbaCode(params.newCode),
         confirmToken: expectedToken,
         note: "Call this tool again with the same workbook/module/newCode and this confirmToken to apply the write. If the module's code changes before that call (e.g. another client writes to it first), the token will no longer match and the write will be rejected rather than silently overwriting that change.",
       };

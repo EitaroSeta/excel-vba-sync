@@ -48,6 +48,9 @@ Claude Code/Desktop（手動設定）とVS Code内蔵・VS Code拡張機能型�
 - 書き込み前には自動的に現在のコードがワークブックと同じフォルダの`.excel-vba-sync-backups`にタイムスタンプ付きで退避される
 - Sheet/ThisWorkbookのコードビハインド（Documentモジュール）に書き込んだ場合、ショートカットキー割り当てなどのプロシージャ単位のAttribute情報はVBAのAPI制約上失われる（レスポンスに警告が入る）
 
+**書き込み前の簡易静的解析（`lintWarnings`）**
+`dryRun`のレスポンスには`lintWarnings`も含まれます。本物のVBAパーサーではなく正規表現ベースの簡易チェックですが、`Select`/`Activate`/`Selection`/`ActiveSheet`/`ActiveWorkbook`の使用、`Option Explicit`漏れ、`UsedRange`依存、裸の`End`、200行超の長いプロシージャ、オブジェクト代入時の`Set`忘れ、`PtrSafe`なしの`Declare`、ファイル番号の固定使用、を検出します。あくまで**advisory（警告のみ）で、書き込み自体をブロックすることはありません**。AIが書いたコードの自己チェックに使ってください。より広範なルール（未使用変数・デッドコード検出等）は現時点では未実装です。
+
 ## 4. Excelプロセスの自動解決
 
 ### 4.1 workbookPathによる自動起動・自動オープン
