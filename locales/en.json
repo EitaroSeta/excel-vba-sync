@@ -31,7 +31,7 @@
   "export.warn.nonMacroFileSkipped": "【WARN】⚠️Powershell: Skipped non-macro-enabled (*.xlsm) or binary (*.xlsb) workbook: {0}",
   "export.info.autoSaveCanceled": "【INFO】✅Powershell: Temporarily disabled AutoSave for {0}.",
   "export.error.autoSaveCancelFailed": "【ERROR】❌Powershell: Failed to disable AutoSave for {0}.",
-  "export.warn.protectedVBProject": "【WARN】⚠️Powershell: VBProject in {0} is protected. Please unprotect it before exporting.",
+  "export.warn.protectedVBProject": "【WARN】⚠️Powershell: VBProject in {0} is protected. To export: (1) enable 'Trust access to the VBA project object model' in Excel (File → Options → Trust Center → Trust Center Settings → Macro Settings); (2) open the VBA Editor (Alt+F11) → Tools → VBAProject Properties → Protection, remove the lock/password and save the workbook.",
   "export.warn.noModulesProcessed": "【WARN】⚠️Powershell: No modules were processed for export.",
   "export.info.exportSuccess": "【INFO】✅Powershell: Export succeeded: {0}",
   "export.warn.exportEmptyModule": "【WARN】⚠️Powershell: {0} has no code; skipped.",
