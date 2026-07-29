@@ -5,6 +5,7 @@
 
 ## 目次 / Contents
 - [概要 / Overview](#overview)
+- [2つの使い方 / Two Ways to Use This](#two-ways)
 - [インストール / Install](#install)
 - [🤖 AIクライアントから使う（Claude Code / Claude Desktop） / Use from an AI client](#ai-usage)
 - [⚠重要 / Important](#important)
@@ -16,7 +17,7 @@
 VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内容のVBAへのインポートが行えます。  
 **Winsdows10/11＋Excel＋VSCode環境でのみ動作します。**
 
-> 🤖 **AIエージェント連携（MCP対応）**：Claude Code・Claude Desktop・VS Code内蔵のCopilot Chatなど、[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)に対応したAIクライアントから、VBAコードの読み取り・検索・マクロ実行に加えて**コードの書き込み**までを行えます。書き込みは`dryRun`→`confirmToken`の2段階確認フロー・書き込み前の自動バックアップ・複数クライアント同時利用時の楽観的排他制御を備えた設計です。詳細は[🤖 AIクライアントから使う](#ai-usage)を参照。
+この拡張機能は、**①VS Code上で手動編集**するのと、**②AIエージェントに読み書きさせる**のと、2つの使い方ができます。両者はデータの流れが根本的に違うので、詳しくは次の「[2つの使い方](#two-ways)」をご覧ください。
 
 - ✅ 開いているExcelブックから `.bas` / `.cls` / `.frm` 内のコードをエクスポート（保存）
 - ✅ VSCode 上で編集
@@ -46,7 +47,7 @@ VBA モジュールのVSCodeへのエクスポート、VSCodeで編集した内�
 You can export VBA modules to VS Code and import the content edited in VS Code back into VBA.
 Works in a Windows 10/11 + Excel + VS Code environment only.
 
-> 🤖 **AI agent integration (MCP)**: From any [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) client — Claude Code, Claude Desktop, or VS Code's own Copilot Chat — read, search, run macros in, and **write** VBA code. Writes go through a two-step `dryRun`/`confirmToken` confirmation flow, an automatic backup before every change, and optimistic concurrency control when multiple clients are active. See [🤖 Use from an AI client](#ai-usage) for details.
+This extension can be used in two ways: **① manual editing in VS Code**, or **② letting an AI agent read/write for you**. The two have fundamentally different data flows — see "[Two Ways to Use This](#two-ways)" below for details.
 
 - ✅ Export inner code of  `.bas` / `.cls` / `.frm` from opened Excel
 - ✅ Edit VBA modules in VSCode
@@ -67,6 +68,66 @@ Works in a Windows 10/11 + Excel + VS Code environment only.
 - **Generate VBA Flow Chart** (Experimental) — Create an mmd folder in the export destination and output a simple flowchart in Mermaid format (*.mmd)
 - **Excel VBA: Print MCP Server Config (for AI)** — Generate an MCP connection config for AI clients (Claude Code/Desktop, etc.)
 - **Command Palette / GUI support** — Use commands or side panel buttons
+
+---
+
+## <a id="two-ways"></a>🔀 2つの使い方 / Two Ways to Use This
+
+### ① 手動で使う（VS Code編集）
+Excel VBE の中身は、**エクスポート先フォルダのテキストファイル（`.bas`/`.cls`/`.frm`）を経由して**やり取りします。
+
+```
+Excel VBE  --[Export]-->  エクスポートフォルダの .bas/.cls/.frm
+                                        │
+                                  VS Code で編集
+                                        │
+Excel VBE  <--[Import]--  編集したファイル
+```
+
+**Importボタンを押すまで、VS Code上の変更はExcel側に反映されません。** 逆に、Excel側でVBEを直接編集した場合も、再度Exportするまでテキストファイル側には反映されません。両者は明示的な操作（Export/Import）でのみ同期する、ズレうる2つのコピーです。
+
+### ② AIエージェントから使う（MCP）
+AIクライアント（Claude Code・Claude Desktop・Copilot Chat・Codex等）は、**エクスポートフォルダを経由せず、Excelの「今開いているVBAプロジェクト」を直接読み書きします**（内蔵のMCPサーバーがCOM経由で操作）。
+
+```
+AIクライアント（Claude Code / Copilot Chat 等）
+        │  MCP
+        ▼
+内蔵MCPサーバー  ──COM経由で直接──>  Excel VBE（今開いているプロジェクト）
+```
+
+**AIがコードを書き込むと、Excel VBE上に即座に反映されます**（①のようにImportボタンを押す必要はありません）。書き込みには`dryRun`→`confirmToken`の2段階確認フロー・自動バックアップ・複数クライアント同時利用時の排他制御が入っており、AIエージェントが一発で書き込んでしまうことはありません。詳しくは後述の「[🤖 AIクライアントから使う](#ai-usage)」を参照してください。
+
+**①②は独立しています。** AIがExcelに直接書き込んだ内容を、①のエクスポート済みファイルへ反映したい場合は、改めて手動でExportしてください（自動では同期されません）。
+
+---
+
+### ① Manual editing in VS Code
+The VBE's contents move through **text files in the export folder** (`.bas`/`.cls`/`.frm`).
+
+```
+Excel VBE  --[Export]-->  .bas/.cls/.frm files in the export folder
+                                        │
+                                  edit in VS Code
+                                        │
+Excel VBE  <--[Import]--  the edited files
+```
+
+**Changes in VS Code aren't reflected in Excel until you click Import.** Likewise, edits made directly in the VBE aren't reflected in the text files until you Export again. The two are separate copies that only sync on an explicit Export/Import action.
+
+### ② Using an AI agent (MCP)
+AI clients (Claude Code, Claude Desktop, Copilot Chat, Codex, etc.) **bypass the export folder entirely** and read/write the "currently open VBA project" in Excel directly (the built-in MCP server operates via COM).
+
+```
+AI client (Claude Code / Copilot Chat / etc.)
+        │  MCP
+        ▼
+Built-in MCP server  ──directly via COM──>  Excel VBE (the currently open project)
+```
+
+**When an AI writes code, it's reflected in the VBE immediately** — no Import button needed, unlike ①. Writes go through a two-step `dryRun`/`confirmToken` confirmation flow, automatic backups, and concurrency control for multiple simultaneous clients, so an AI agent can't write blind in one shot. See "[Use from an AI client](#ai-usage)" below for details.
+
+**① and ② are independent.** If an AI writes directly to Excel and you also want that reflected in ①'s exported files, Export manually again afterward — it does not happen automatically.
 
 ---
 ## <a id="install"></a>🧩 インストール（VSIX） / Install from VSIX
@@ -102,11 +163,24 @@ code --install-extension "$OUT"
 
 ## <a id="ai-usage"></a>🤖 AIクライアントから使う（Claude Code / Claude Desktop） / Use from an AI client
 
-この拡張機能には[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)サーバーが内蔵されており、Claude Code・Claude Desktopなどの外部AIクライアントから、VBAコードの読み取り・検索・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます。
+この拡張機能には[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)サーバーが内蔵されており、Claude Code・Claude Desktop・VS Code内蔵のCopilot Chat・Codex等のAIクライアントから、VBAコードの読み取り・検索・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます（上記「[2つの使い方](#two-ways)」の②）。
+
+### 提供される8つのツール / 8 available tools
+
+| ツール / Tool | できること / What it does |
+|---|---|
+| `ping` | 疎通確認（サーバーが応答するか） / Health check |
+| `excel_list_modules` | モジュール名・種別・行数の一覧を軽量取得 / List modules (name, type, line count) |
+| `excel_get_module_code` | モジュールのソースコード全体を読み取り / Read a module's full source code |
+| `vba_search_code` | 全ブック・全モジュール横断でコード検索（正規表現対応） / Search code across all open workbooks/modules (regex supported) |
+| `excel_list_macros` | 実行可能なマクロ（Public Sub）の一覧を取得 / List runnable macros (Public Subs) |
+| `excel_run_macro` | マクロを実行 / Run a macro |
+| `excel_read_range` | セル範囲の値を読み取り（マクロの実行結果検証等に） / Read cell values from a range (e.g. to verify a macro's effect) |
+| `excel_update_module_code` | モジュールのコードを書き込み（`dryRun`/`confirmToken`の安全フロー付き） / Write a module's code (with the `dryRun`/`confirmToken` safety flow) |
 
 セットアップ手順・安全設計・既知の注意点は **[docs/AI_USAGE.md](docs/AI_USAGE.md)** を参照してください。
 
-This extension has a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, allowing external AI clients such as Claude Code and Claude Desktop to read, search, and run VBA code — and even write AI-authored code directly into an Excel VBA module.
+This extension has a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, allowing AI clients — Claude Code, Claude Desktop, VS Code's own Copilot Chat, Codex, etc. — to read, search, and run VBA code, and even write AI-authored code directly into an Excel VBA module (option ② in "[Two Ways to Use This](#two-ways)" above).
 
 See **[docs/AI_USAGE.md](docs/AI_USAGE.md)** for setup steps, safety design, and known caveats.
 
