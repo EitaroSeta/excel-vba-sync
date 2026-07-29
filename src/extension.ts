@@ -727,6 +727,11 @@ export function activate(context: vscode.ExtensionContext) {
   const folderPath = context.globalState.get<string>('vbaExportFolder');
   const treeProvider = new SimpleTreeProvider(folderPath);
   const treeView = vscode.window.createTreeView('exportPanel', { treeDataProvider: treeProvider });
+  // Keep the panel title in sync with the actual running version -- package.json's
+  // views[].name is a static string that has to be hand-edited on every release and
+  // had drifted stale (still read "v.0.0.28" as of v0.0.55). Overriding it here at
+  // runtime means it can never go stale again.
+  treeView.title = `v.${context.extension.packageJSON.version}`;
   //for MCP
   channel = vscode.window.createOutputChannel("VBA Tools");
   context.subscriptions.push(channel);
