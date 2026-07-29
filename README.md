@@ -165,7 +165,7 @@ code --install-extension "$OUT"
 
 この拡張機能には[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)サーバーが内蔵されており、Claude Code・Claude Desktop・VS Code内蔵のCopilot Chat・Codex等のAIクライアントから、VBAコードの読み取り・検索・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます（上記「[2つの使い方](#two-ways)」の②）。
 
-### 提供される9つのツール / 9 available tools
+### 提供される10のツール / 10 available tools
 
 | ツール / Tool | できること / What it does |
 |---|---|
@@ -174,6 +174,7 @@ code --install-extension "$OUT"
 | `excel_get_module_code` | モジュールのソースコード全体を読み取り / Read a module's full source code |
 | `vba_search_code` | 全ブック・全モジュール横断でコード検索（正規表現対応） / Search code across all open workbooks/modules (regex supported) |
 | `vba_analyze_flow` | プロシージャの制御フロー（分岐・ループ・呼び出し）を構造化JSONで取得 / Get a procedure's control-flow structure (branches, loops, calls) as structured JSON |
+| `vba_render_flowchart` | プロシージャの制御フロー、またはモジュールの呼び出しグラフをMermaid図として取得 / Get a procedure's control flow, or a module's call graph, as a Mermaid diagram |
 | `excel_list_macros` | 実行可能なマクロ（Public Sub）の一覧を取得 / List runnable macros (Public Subs) |
 | `excel_run_macro` | マクロを実行 / Run a macro |
 | `excel_read_range` | セル範囲の値を読み取り（マクロの実行結果検証等に） / Read cell values from a range (e.g. to verify a macro's effect) |

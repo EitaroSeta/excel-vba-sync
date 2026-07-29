@@ -736,6 +736,156 @@ server.tool(
   }
 );
 
+// ------------------------------------------------------------ vba_render_flowchart ------------------------------------------------------------
+// Reuses scripts/VBA-FlowJson.ps1 + scripts/Convert-FlowJsonToMermaid.ps1 (also used by the
+// extension's manual "Generate VBA Flow Chart" command) as external processes against a live
+// COM snapshot of the module's code. Never writes to the workbook's own folder -- all Mermaid
+// output is generated in a throwaway temp folder and returned inline, then the folder is removed.
+server.tool(
+  "vba_render_flowchart",
+  "Render a VBA procedure's control flow as Mermaid flowchart text (flowchart TD), or the whole module's call graph if 'procedure' is omitted -- for pasting into a Markdown preview, mermaid.live, or a Mermaid-rendering chat client to see a diagram instead of reasoning over vba_analyze_flow's raw JSON. Uses the exact same rendering logic as the extension's manual 'Generate VBA Flow Chart' command (If/ElseIf/Else, Do/Loop, For/Next, Select Case, GoTo/labels rendered as Mermaid node/edge shapes), run as an external process against a live snapshot of the module's current code (not the exported .bas/.cls/.frm on disk). Phase 1 limitation: the call graph (procedure omitted) shows resolved:false for any call into another module -- this does not mean the callee doesn't exist, only that cross-module resolution wasn't attempted. Never writes anything to disk (no vbaExport/.mmd files are created; the workbook's own folder is untouched). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    module: z.string().describe("VBA module name to render."),
+    procedure: z.string().optional().describe("Procedure (Sub/Function/Property) name within module to render a detailed flowchart for. Omit to instead render the whole module's call graph (which procedure calls which) as a single diagram."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const mod = psq(params.module);
+
+    const readResult = await readCurrentModuleCode(wb, wbPath, mod);
+    if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
+
+    const extByType: Record<number, string> = { 1: "bas", 2: "cls", 100: "cls", 3: "frm" };
+    const ext = extByType[readResult.componentType];
+    if (!ext) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: false, error: "unsupported_component_type", componentType: readResult.componentType }) }],
+        isError: true,
+      };
+    }
+
+    const sourceHash = computeNormalizedTextHash(readResult.currentCode);
+    const tempDir = path.join(os.tmpdir(), `VBAFlow_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    const sourceFile = path.join(tempDir, `${readResult.module}.${ext}`);
+    const flowJsonFile = path.join(tempDir, "result.flow.json");
+
+    try {
+      fs.mkdirSync(tempDir, { recursive: true });
+      fs.writeFileSync(sourceFile, readResult.currentCode, { encoding: "utf8" });
+
+      const scriptsDir = getScriptsDir();
+      if (!scriptsDir) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "MCP_SCRIPTS_DIR/MCP_PS_LIST not set" }) }], isError: true };
+      }
+      const flowScript = path.join(scriptsDir, "VBA-FlowJson.ps1");
+      const mermaidScript = path.join(scriptsDir, "Convert-FlowJsonToMermaid.ps1");
+      if (!fs.existsSync(flowScript)) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: `script not found: ${flowScript}` }) }], isError: true };
+      }
+      if (!fs.existsSync(mermaidScript)) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: `script not found: ${mermaidScript}` }) }], isError: true };
+      }
+
+      try {
+        await execFileAsync("powershell.exe", [
+          "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+          "-File", flowScript,
+          "-FolderPath", tempDir,
+          "-FilePath", sourceFile,
+          "-OutputPath", flowJsonFile,
+          "-Encoding", "UTF8",
+        ], { windowsHide: true, encoding: "buffer", timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
+      } catch (e: any) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "flow_analysis_failed", detail: String(e?.message ?? e) }) }], isError: true };
+      }
+      if (!fs.existsSync(flowJsonFile)) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "flow_analysis_failed", detail: "result JSON was not produced" }) }], isError: true };
+      }
+
+      try {
+        await execFileAsync("powershell.exe", [
+          "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+          "-File", mermaidScript,
+          "-JsonPath", flowJsonFile,
+          "-OutDir", tempDir,
+        ], { windowsHide: true, encoding: "buffer", timeout: 30000, maxBuffer: 2 * 1024 * 1024 });
+      } catch (e: any) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "mermaid_render_failed", detail: String(e?.message ?? e) }) }], isError: true };
+      }
+
+      const doc: any = JSON.parse(fs.readFileSync(flowJsonFile, "utf8"));
+      const procedures: any[] = Array.isArray(doc.procedures) ? doc.procedures : [];
+
+      if (params.procedure) {
+        const found = procedures.find((p: any) => p.name === params.procedure);
+        if (!found) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                error: "procedure_not_found",
+                module: readResult.module,
+                procedure: params.procedure,
+                availableProcedures: procedures.map((p: any) => p.name),
+              }),
+            }],
+            isError: true,
+          };
+        }
+        const mmdFile = path.join(tempDir, `${readResult.module}.${params.procedure}.mmd`);
+        if (!fs.existsSync(mmdFile)) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ ok: false, error: "mermaid_render_failed", detail: "expected .mmd file was not produced", expectedPath: mmdFile }) }],
+            isError: true,
+          };
+        }
+        const mermaid = fs.readFileSync(mmdFile, "utf8");
+        const res: Record<string, unknown> = {
+          ok: true,
+          workbook: readResult.workbook,
+          module: readResult.module,
+          componentType: readResult.componentType,
+          mode: "procedure",
+          procedure: params.procedure,
+          mermaid,
+          sourceHash,
+        };
+        if (readResult.launchedExcelPid) { res.launchedExcelPid = readResult.launchedExcelPid; }
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      const callgraphFile = path.join(tempDir, `${readResult.module}.callgraph.mmd`);
+      if (!fs.existsSync(callgraphFile)) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: false, error: "mermaid_render_failed", detail: "expected callgraph .mmd file was not produced", expectedPath: callgraphFile }) }],
+          isError: true,
+        };
+      }
+      const mermaid = fs.readFileSync(callgraphFile, "utf8");
+      const res: Record<string, unknown> = {
+        ok: true,
+        workbook: readResult.workbook,
+        module: readResult.module,
+        componentType: readResult.componentType,
+        mode: "callgraph",
+        mermaid,
+        sourceHash,
+      };
+      if (readResult.launchedExcelPid) { res.launchedExcelPid = readResult.launchedExcelPid; }
+      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+    } finally {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* noop */ }
+    }
+  }
+);
+
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_update_module_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // dry-run（プレビュー）→ confirmToken付き呼び出し（実書き込み）の2段階フロー。

@@ -16,7 +16,7 @@
    - Claude Code: プロジェクトルートの`.mcp.json`
    - Claude Desktop: `claude_desktop_config.json`
    - 既存の設定がある場合はファイル全体を上書きせず、`mcpServers`オブジェクトに`excel-vba-sync`のエントリだけを追記する
-3. AIクライアントを再起動 → 9ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `excel_update_module_code` / `excel_read_range`）が使用可能に
+3. AIクライアントを再起動 → 10ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `excel_update_module_code` / `excel_read_range`）が使用可能に
 
 ### 1.2 VS Code内蔵・VS Code拡張機能型のAIクライアント（Copilot Chat / Codex 等）
 
@@ -111,6 +111,12 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 - ディスクへの保存は一切しない（常にその場でJSON応答を返すのみ）
 - `sourceHash`（正規化済みコードのSHA256）が応答に含まれる。将来の鮮度検知機能向けの下地で、現時点では比較には使われない
 - 読み取り専用。VBAプロジェクトオブジェクトモデルへのアクセス（Trust Center設定）が必要
+
+`vba_analyze_flow`のJSONを人間が見て分かる図にしたい場合は`vba_render_flowchart`を使う。既存の「Generate VBA Flow Chart」コマンドと同じ`Convert-FlowJsonToMermaid.ps1`をそのまま再利用し、Mermaidの`flowchart TD`テキストを返す。
+
+- `procedure`指定時：そのプロシージャの詳細フローチャート
+- `procedure`省略時：モジュール内の全プロシージャの呼び出し関係を示すコールグラフ（他モジュールへの呼び出しは`vba_analyze_flow`と同様に未解決）
+- こちらもディスクには一切保存しない（一時フォルダで生成→読み取り→即削除）。返ってきたMermaidテキストをMarkdownプレビューやmermaid.live等に貼り付けて図として見る
 
 ## 8. AIエージェント向けの「リファレンス」について
 
