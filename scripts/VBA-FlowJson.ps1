@@ -145,7 +145,8 @@ function JoinContinuations {
 function GetModuleName {
   param([string[]]$Lines,[string]$Fallback)
   $Lines = @(Ensure-Array $Lines)
-  $max = [math]::Min(200, [math]::Max(0, $Lines.Length-1))
+  if($Lines.Length -eq 0){ return [IO.Path]::GetFileNameWithoutExtension($Fallback) }
+  $max = [math]::Min(200, $Lines.Length-1)
   for($i=0; $i -le $max; $i++){
     $ln = [string]$Lines[$i]
     if($ln -match '^\s*Attribute\s+VB_Name\s*=\s*"(?<n>[^"]+)"'){ return $Matches.n }

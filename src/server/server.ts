@@ -603,18 +603,118 @@ $searchRes | ConvertTo-Json -Depth 6
 
 // ------------------------------------------------------------ vba_analyze_flow ------------------------------------------------------------
 // Reuses scripts/VBA-FlowJson.ps1 (also used by the extension's manual "Generate VBA
-// Flow Chart" command) as an external process against a live COM snapshot of the
-// module's code, written to a temp file first -- the script only operates on files,
-// never COM. Phase 1: single module only (no cross-module call resolution), no disk
-// writes (result is always returned inline, never saved).
+// Flow Chart" command) as an external process against a live COM snapshot of ALL the
+// workbook's modules, written to sibling temp files -- the script's symbol table
+// (BuildSymbolTable) scans every .bas/.cls/.frm it finds in the folder, so every module
+// must be present as a file there for cross-module call resolution to work. No disk
+// writes to the workbook's own folder (result is always returned inline, never saved).
 function computeNormalizedTextHash(text: string): string {
   const norm = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   return createHash("sha256").update(norm, "utf8").digest("hex");
 }
 
+// Resolves the workbook once via COM, then snapshots every VBA module's current code
+// into <tempDir>/<ModuleName>.<ext> in a single PowerShell/COM session (avoiding one
+// launch per module) so VBA-FlowJson.ps1's symbol table can see the whole project.
+// Returns the target module's own code/type/name, same shape as a single-module read.
+async function writeAllModulesToTemp(
+  wbEscaped: string,
+  wbPathEscaped: string,
+  modEscaped: string,
+  tempDirEscaped: string
+): Promise<
+  | { ok: true; workbook: string; module: string; componentType: number; currentCode: string; launchedExcelPid?: number }
+  | { ok: false; content: { type: "text"; text: string }[]; isError: true }
+> {
+  const dotSource = dotSourceExcelUtil();
+  const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPathEscaped}' -WorkbookName '${wbEscaped}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { Test-VbaTrustAccess -Workbook $wb | Out-Null }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+$extByType = @{ 1='bas'; 2='cls'; 100='cls'; 3='frm' }
+$targetCode = $null
+$targetType = $null
+$targetName = $null
+
+try {
+  foreach ($vbc in $wb.VBProject.VBComponents) {
+    $cm = $vbc.CodeModule
+    $code = if ($cm.CountOfLines -gt 0) { $cm.Lines(1, $cm.CountOfLines) } else { "" }
+    if ($vbc.Name -eq '${modEscaped}') {
+      $targetCode = $code
+      $targetType = [int]$vbc.Type
+      $targetName = $vbc.Name
+    }
+    $ext = $extByType[[int]$vbc.Type]
+    if (-not $ext) { continue }
+    $outPath = Join-Path '${tempDirEscaped}' "$($vbc.Name).$ext"
+    [System.IO.File]::WriteAllText($outPath, $code, (New-Object System.Text.UTF8Encoding($false)))
+  }
+} catch {
+  @{ ok=$false; error='read_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+  exit
+}
+
+if ($null -eq $targetName) {
+  @{ ok=$false; error='module_not_found'; module='${modEscaped}' } | ConvertTo-Json
+  exit
+}
+
+$res = @{ ok=$true; workbook=$wb.Name; module=$targetName; componentType=$targetType; currentCode=$targetCode }
+if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+$res | ConvertTo-Json -Depth 6
+`.trim();
+
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+      { windowsHide: true, encoding: "buffer", timeout: 30000, maxBuffer: 4 * 1024 * 1024 }
+    );
+    const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+    const classified = classifyResult(outText);
+    if (classified.isError) {
+      return { ok: false, content: classified.content, isError: true };
+    }
+
+    let payload: any = null;
+    try {
+      const start = Math.min(...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; }));
+      payload = Number.isFinite(start) ? JSON.parse(outText.slice(start)) : null;
+    } catch { /* noop */ }
+
+    if (!payload?.ok) {
+      return { ok: false, content: [{ type: "text", text: outText }], isError: true };
+    }
+
+    return {
+      ok: true,
+      workbook: payload.workbook,
+      module: payload.module,
+      componentType: payload.componentType,
+      currentCode: payload.currentCode,
+      launchedExcelPid: payload.launchedExcelPid,
+    };
+  } catch (e: any) {
+    return { ok: false, content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
+  }
+}
+
 server.tool(
   "vba_analyze_flow",
-  "Analyze the control-flow structure (branches, loops, GoTo/labels, calls) of a VBA procedure, or list procedures in a module, as structured JSON -- for answering questions like 'where does this GoTo jump to' or 'is there an unreachable branch' directly from data, without re-reading and mentally parsing raw code. Reuses the same analyzer as the extension's manual 'Generate VBA Flow Chart' command (If/ElseIf/Else, Do/Loop, For/Next, Select Case, With, GoTo/labels, Exit/Return, Err.Raise), run as an external process against a live snapshot of the module's current code (not the exported .bas/.cls/.frm on disk). Omit 'procedure' to get a lightweight list of {name, kind, startLine, endLine} for every Sub/Function/Property in the module -- prefer this over full analysis when you just need to know what procedures exist. Phase 1 limitation: 'calls' targets in other modules are NOT resolved (each procedure's calls list only resolves symbols within THIS module) -- resolved:false on a call does not mean the callee doesn't exist, only that this tool didn't check other modules. Never writes anything to disk. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  "Analyze the control-flow structure (branches, loops, GoTo/labels, calls) of a VBA procedure, or list procedures in a module, as structured JSON -- for answering questions like 'where does this GoTo jump to' or 'is there an unreachable branch' directly from data, without re-reading and mentally parsing raw code. Reuses the same analyzer as the extension's manual 'Generate VBA Flow Chart' command (If/ElseIf/Else, Do/Loop, For/Next, Select Case, With, GoTo/labels, Exit/Return, Err.Raise), run as an external process against a live snapshot of the module's current code (not the exported .bas/.cls/.frm on disk). Omit 'procedure' to get a lightweight list of {name, kind, startLine, endLine} for every Sub/Function/Property in the module -- prefer this over full analysis when you just need to know what procedures exist. Cross-module calls ARE resolved (every module in the workbook is snapshotted alongside the target one): resolved:false on a call means the callee genuinely could not be found anywhere in this workbook, not merely that this tool didn't check other modules. Never writes anything to disk. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
@@ -629,26 +729,25 @@ server.tool(
     const wbPath = psq(params.workbookPath ?? "");
     const mod = psq(params.module);
 
-    const readResult = await readCurrentModuleCode(wb, wbPath, mod);
-    if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
-
-    const extByType: Record<number, string> = { 1: "bas", 2: "cls", 100: "cls", 3: "frm" };
-    const ext = extByType[readResult.componentType];
-    if (!ext) {
-      return {
-        content: [{ type: "text", text: JSON.stringify({ ok: false, error: "unsupported_component_type", componentType: readResult.componentType }) }],
-        isError: true,
-      };
-    }
-
-    const sourceHash = computeNormalizedTextHash(readResult.currentCode);
     const tempDir = path.join(os.tmpdir(), `VBAFlow_${Date.now()}_${Math.random().toString(36).slice(2)}`);
-    const sourceFile = path.join(tempDir, `${readResult.module}.${ext}`);
     const resultJsonFile = path.join(tempDir, "result.flow.json");
 
     try {
       fs.mkdirSync(tempDir, { recursive: true });
-      fs.writeFileSync(sourceFile, readResult.currentCode, { encoding: "utf8" });
+
+      const readResult = await writeAllModulesToTemp(wb, wbPath, mod, psq(tempDir));
+      if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
+
+      const extByType: Record<number, string> = { 1: "bas", 2: "cls", 100: "cls", 3: "frm" };
+      const ext = extByType[readResult.componentType];
+      if (!ext) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: false, error: "unsupported_component_type", componentType: readResult.componentType }) }],
+          isError: true,
+        };
+      }
+      const sourceFile = path.join(tempDir, `${readResult.module}.${ext}`);
+      const sourceHash = computeNormalizedTextHash(readResult.currentCode);
 
       const scriptsDir = getScriptsDir();
       if (!scriptsDir) {
@@ -739,11 +838,12 @@ server.tool(
 // ------------------------------------------------------------ vba_render_flowchart ------------------------------------------------------------
 // Reuses scripts/VBA-FlowJson.ps1 + scripts/Convert-FlowJsonToMermaid.ps1 (also used by the
 // extension's manual "Generate VBA Flow Chart" command) as external processes against a live
-// COM snapshot of the module's code. Never writes to the workbook's own folder -- all Mermaid
-// output is generated in a throwaway temp folder and returned inline, then the folder is removed.
+// COM snapshot of ALL the workbook's modules (see writeAllModulesToTemp above -- needed for
+// cross-module call resolution in the call graph). Never writes to the workbook's own folder --
+// all Mermaid output is generated in a throwaway temp folder and returned inline, then removed.
 server.tool(
   "vba_render_flowchart",
-  "Render a VBA procedure's control flow as Mermaid flowchart text (flowchart TD), or the whole module's call graph if 'procedure' is omitted -- for pasting into a Markdown preview, mermaid.live, or a Mermaid-rendering chat client to see a diagram instead of reasoning over vba_analyze_flow's raw JSON. Uses the exact same rendering logic as the extension's manual 'Generate VBA Flow Chart' command (If/ElseIf/Else, Do/Loop, For/Next, Select Case, GoTo/labels rendered as Mermaid node/edge shapes), run as an external process against a live snapshot of the module's current code (not the exported .bas/.cls/.frm on disk). Phase 1 limitation: the call graph (procedure omitted) shows resolved:false for any call into another module -- this does not mean the callee doesn't exist, only that cross-module resolution wasn't attempted. Never writes anything to disk (no vbaExport/.mmd files are created; the workbook's own folder is untouched). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  "Render a VBA procedure's control flow as Mermaid flowchart text (flowchart TD), or the whole module's call graph if 'procedure' is omitted -- for pasting into a Markdown preview, mermaid.live, or a Mermaid-rendering chat client to see a diagram instead of reasoning over vba_analyze_flow's raw JSON. Uses the exact same rendering logic as the extension's manual 'Generate VBA Flow Chart' command (If/ElseIf/Else, Do/Loop, For/Next, Select Case, GoTo/labels rendered as Mermaid node/edge shapes), run as an external process against a live snapshot of the module's current code (not the exported .bas/.cls/.frm on disk). Cross-module calls in the call graph ARE resolved (every module in the workbook is snapshotted alongside the target one). Never writes anything to disk (no vbaExport/.mmd files are created; the workbook's own folder is untouched). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
@@ -758,26 +858,25 @@ server.tool(
     const wbPath = psq(params.workbookPath ?? "");
     const mod = psq(params.module);
 
-    const readResult = await readCurrentModuleCode(wb, wbPath, mod);
-    if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
-
-    const extByType: Record<number, string> = { 1: "bas", 2: "cls", 100: "cls", 3: "frm" };
-    const ext = extByType[readResult.componentType];
-    if (!ext) {
-      return {
-        content: [{ type: "text", text: JSON.stringify({ ok: false, error: "unsupported_component_type", componentType: readResult.componentType }) }],
-        isError: true,
-      };
-    }
-
-    const sourceHash = computeNormalizedTextHash(readResult.currentCode);
     const tempDir = path.join(os.tmpdir(), `VBAFlow_${Date.now()}_${Math.random().toString(36).slice(2)}`);
-    const sourceFile = path.join(tempDir, `${readResult.module}.${ext}`);
     const flowJsonFile = path.join(tempDir, "result.flow.json");
 
     try {
       fs.mkdirSync(tempDir, { recursive: true });
-      fs.writeFileSync(sourceFile, readResult.currentCode, { encoding: "utf8" });
+
+      const readResult = await writeAllModulesToTemp(wb, wbPath, mod, psq(tempDir));
+      if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
+
+      const extByType: Record<number, string> = { 1: "bas", 2: "cls", 100: "cls", 3: "frm" };
+      const ext = extByType[readResult.componentType];
+      if (!ext) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: false, error: "unsupported_component_type", componentType: readResult.componentType }) }],
+          isError: true,
+        };
+      }
+      const sourceFile = path.join(tempDir, `${readResult.module}.${ext}`);
+      const sourceHash = computeNormalizedTextHash(readResult.currentCode);
 
       const scriptsDir = getScriptsDir();
       if (!scriptsDir) {
@@ -885,7 +984,6 @@ server.tool(
     }
   }
 );
-
 
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_update_module_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // dry-run（プレビュー）→ confirmToken付き呼び出し（実書き込み）の2段階フロー。

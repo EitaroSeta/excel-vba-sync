@@ -107,7 +107,7 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 
 - `procedure`省略時：モジュール内の全プロシージャの`{name, kind, startLine, endLine}`一覧のみを軽量に返す（`excel_list_macros`の`moduleName`省略パターンと同じ設計）。存在するプロシージャ名を知らない場合はまずこちらを使う
 - `procedure`指定時：該当プロシージャの詳細フロー（`calls`、Mermaid用の`nodes`/`edges`/`loopSpans`）を返す
-- **Phase 1の制約**：モジュール横断の呼び出し解決はしない。他モジュールへの`calls`は常に`resolved:false`になるが、これは「呼び出し先が存在しない」という意味ではなく「このツールが他モジュールを確認していない」という意味
+- モジュール横断の呼び出し解決に対応済み：ワークブック内の全モジュールを一時フォルダに並べてから解析するため、他モジュールで定義された関数への呼び出しも`resolved:true`になる。`resolved:false`は「ワークブック内のどこにも呼び出し先が見つからなかった」ことを意味する
 - ディスクへの保存は一切しない（常にその場でJSON応答を返すのみ）
 - `sourceHash`（正規化済みコードのSHA256）が応答に含まれる。将来の鮮度検知機能向けの下地で、現時点では比較には使われない
 - 読み取り専用。VBAプロジェクトオブジェクトモデルへのアクセス（Trust Center設定）が必要
@@ -115,7 +115,7 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 `vba_analyze_flow`のJSONを人間が見て分かる図にしたい場合は`vba_render_flowchart`を使う。既存の「Generate VBA Flow Chart」コマンドと同じ`Convert-FlowJsonToMermaid.ps1`をそのまま再利用し、Mermaidの`flowchart TD`テキストを返す。
 
 - `procedure`指定時：そのプロシージャの詳細フローチャート
-- `procedure`省略時：モジュール内の全プロシージャの呼び出し関係を示すコールグラフ（他モジュールへの呼び出しは`vba_analyze_flow`と同様に未解決）
+- `procedure`省略時：モジュール内の全プロシージャの呼び出し関係を示すコールグラフ（`vba_analyze_flow`と同様、他モジュールへの呼び出しも解決される）
 - こちらもディスクには一切保存しない（一時フォルダで生成→読み取り→即削除）。返ってきたMermaidテキストをMarkdownプレビューやmermaid.live等に貼り付けて図として見る
 
 ## 8. AIエージェント向けの「リファレンス」について
