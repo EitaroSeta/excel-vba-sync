@@ -11,6 +11,12 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.53] - 2026-07-29
+### ### Changed
+- Restructured `README.md`: added a "2つの使い方 / Two Ways to Use This" section (manual VS Code editing vs. AI-agent MCP usage) right after the overview and before Install, with explicit data-flow diagrams for each -- addressing feedback that the AI-agent capability felt like an abrupt aside, and that it wasn't clear manual edits go through the export-folder text files (only synced on Export/Import) while AI writes bypass that folder and land directly in the live VBE. Also added an 8-tool table to the "AIクライアントから使う" section, which previously only linked out to `docs/AI_USAGE.md` without listing what's available.
+- Tightened `docs/AI_USAGE.md` into more scannable bullet points -- long paragraphs (often carrying incident backstory alongside the actionable rule) converted to bullets, verbose justification trimmed. No information removed, denser format only.
+- Merged PR #4 (community contribution from @morganpeyre): expanded the "protected VBProject" export warning message (en/ja) with concrete step-by-step unprotect instructions instead of a vague "please unprotect it" message.
+
 ## [0.0.52] - 2026-07-26
 ### ### Fixed
 - Reported live: asking an agent for "the module list, macro list, and the specified sheet cell values" in one request caused **3 separate Excel.exe processes** to launch. Root cause: each MCP tool call spawns its own independent `powershell.exe` process, and if a client fires multiple tool calls concurrently (as Copilot Chat appears to for a multi-part request like this), each one's `Get-OrStartExcelApplication` independently checks `GetActiveObject` before any of the others' newly-launched Excel instance has registered -- so each one concludes "Excel isn't running" and launches its own redundant instance, racing the others.
