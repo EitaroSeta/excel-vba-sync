@@ -601,6 +601,142 @@ $searchRes | ConvertTo-Json -Depth 6
   }
 );
 
+// ------------------------------------------------------------ vba_analyze_flow ------------------------------------------------------------
+// Reuses scripts/VBA-FlowJson.ps1 (also used by the extension's manual "Generate VBA
+// Flow Chart" command) as an external process against a live COM snapshot of the
+// module's code, written to a temp file first -- the script only operates on files,
+// never COM. Phase 1: single module only (no cross-module call resolution), no disk
+// writes (result is always returned inline, never saved).
+function computeNormalizedTextHash(text: string): string {
+  const norm = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return createHash("sha256").update(norm, "utf8").digest("hex");
+}
+
+server.tool(
+  "vba_analyze_flow",
+  "Analyze the control-flow structure (branches, loops, GoTo/labels, calls) of a VBA procedure, or list procedures in a module, as structured JSON -- for answering questions like 'where does this GoTo jump to' or 'is there an unreachable branch' directly from data, without re-reading and mentally parsing raw code. Reuses the same analyzer as the extension's manual 'Generate VBA Flow Chart' command (If/ElseIf/Else, Do/Loop, For/Next, Select Case, With, GoTo/labels, Exit/Return, Err.Raise), run as an external process against a live snapshot of the module's current code (not the exported .bas/.cls/.frm on disk). Omit 'procedure' to get a lightweight list of {name, kind, startLine, endLine} for every Sub/Function/Property in the module -- prefer this over full analysis when you just need to know what procedures exist. Phase 1 limitation: 'calls' targets in other modules are NOT resolved (each procedure's calls list only resolves symbols within THIS module) -- resolved:false on a call does not mean the callee doesn't exist, only that this tool didn't check other modules. Never writes anything to disk. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    module: z.string().describe("VBA module name to analyze."),
+    procedure: z.string().optional().describe("Procedure (Sub/Function/Property) name within module to get full flow detail for. Omit to instead get a lightweight list of every procedure in the module ({name, kind, startLine, endLine}) without flow detail -- cheaper, use this first if you don't already know the exact procedure name."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const mod = psq(params.module);
+
+    const readResult = await readCurrentModuleCode(wb, wbPath, mod);
+    if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
+
+    const extByType: Record<number, string> = { 1: "bas", 2: "cls", 100: "cls", 3: "frm" };
+    const ext = extByType[readResult.componentType];
+    if (!ext) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: false, error: "unsupported_component_type", componentType: readResult.componentType }) }],
+        isError: true,
+      };
+    }
+
+    const sourceHash = computeNormalizedTextHash(readResult.currentCode);
+    const tempDir = path.join(os.tmpdir(), `VBAFlow_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    const sourceFile = path.join(tempDir, `${readResult.module}.${ext}`);
+    const resultJsonFile = path.join(tempDir, "result.flow.json");
+
+    try {
+      fs.mkdirSync(tempDir, { recursive: true });
+      fs.writeFileSync(sourceFile, readResult.currentCode, { encoding: "utf8" });
+
+      const scriptsDir = getScriptsDir();
+      if (!scriptsDir) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "MCP_SCRIPTS_DIR/MCP_PS_LIST not set" }) }], isError: true };
+      }
+      const flowScript = path.join(scriptsDir, "VBA-FlowJson.ps1");
+      if (!fs.existsSync(flowScript)) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: `script not found: ${flowScript}` }) }], isError: true };
+      }
+
+      const args = [
+        "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+        "-File", flowScript,
+        "-FolderPath", tempDir,
+        "-FilePath", sourceFile,
+        "-OutputPath", resultJsonFile,
+        "-Encoding", "UTF8",
+      ];
+      try {
+        await execFileAsync("powershell.exe", args, {
+          windowsHide: true,
+          encoding: "buffer",
+          timeout: 30000,
+          maxBuffer: 2 * 1024 * 1024,
+        });
+      } catch (e: any) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: false, error: "flow_analysis_failed", detail: String(e?.message ?? e) }) }],
+          isError: true,
+        };
+      }
+
+      if (!fs.existsSync(resultJsonFile)) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "flow_analysis_failed", detail: "result JSON was not produced" }) }], isError: true };
+      }
+
+      const doc: any = JSON.parse(fs.readFileSync(resultJsonFile, "utf8"));
+      const procedures: any[] = Array.isArray(doc.procedures) ? doc.procedures : [];
+
+      if (params.procedure) {
+        const found = procedures.find((p: any) => p.name === params.procedure);
+        if (!found) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                ok: false,
+                error: "procedure_not_found",
+                module: readResult.module,
+                procedure: params.procedure,
+                availableProcedures: procedures.map((p: any) => p.name),
+              }),
+            }],
+            isError: true,
+          };
+        }
+        const res: Record<string, unknown> = {
+          ok: true,
+          workbook: readResult.workbook,
+          module: readResult.module,
+          componentType: readResult.componentType,
+          mode: "procedure",
+          procedure: found,
+          sourceHash,
+        };
+        if (readResult.launchedExcelPid) { res.launchedExcelPid = readResult.launchedExcelPid; }
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      const list = procedures.map((p: any) => ({ name: p.name, kind: p.kind, startLine: p.startLine, endLine: p.endLine }));
+      const res: Record<string, unknown> = {
+        ok: true,
+        workbook: readResult.workbook,
+        module: readResult.module,
+        componentType: readResult.componentType,
+        mode: "list",
+        procedures: list,
+        sourceHash,
+      };
+      if (readResult.launchedExcelPid) { res.launchedExcelPid = readResult.launchedExcelPid; }
+      return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+    } finally {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* noop */ }
+    }
+  }
+);
+
+
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_update_module_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 // dry-run（プレビュー）→ confirmToken付き呼び出し（実書き込み）の2段階フロー。
 // 実際の書き込みは import_single_module.ps1 経由（= import_opened_vba.ps1 の

@@ -16,7 +16,7 @@
    - Claude Code: プロジェクトルートの`.mcp.json`
    - Claude Desktop: `claude_desktop_config.json`
    - 既存の設定がある場合はファイル全体を上書きせず、`mcpServers`オブジェクトに`excel-vba-sync`のエントリだけを追記する
-3. AIクライアントを再起動 → 8ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `excel_update_module_code` / `excel_read_range`）が使用可能に
+3. AIクライアントを再起動 → 9ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `excel_update_module_code` / `excel_read_range`）が使用可能に
 
 ### 1.2 VS Code内蔵・VS Code拡張機能型のAIクライアント（Copilot Chat / Codex 等）
 
@@ -101,6 +101,17 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 - 列全体・行全体（`"A:A"`等）は遅くなりうるので範囲を絞ることを推奨
 - 書き込み（セルへの値の書き込み）は未実装
 
-## 7. AIエージェント向けの「リファレンス」について
+## 7. VBAの制御フロー解析（`vba_analyze_flow`）
+
+生のコードを読み直して脳内でパースする代わりに、分岐・ループ・GoTo/ラベル・呼び出しを構造化JSONとして取得できる。既存の「Generate VBA Flow Chart」コマンドが使う`scripts/VBA-FlowJson.ps1`をそのまま外部プロセスとして再利用（COM経由で取得したライブなモジュールコードを一時ファイルに書き出して解析させる）。
+
+- `procedure`省略時：モジュール内の全プロシージャの`{name, kind, startLine, endLine}`一覧のみを軽量に返す（`excel_list_macros`の`moduleName`省略パターンと同じ設計）。存在するプロシージャ名を知らない場合はまずこちらを使う
+- `procedure`指定時：該当プロシージャの詳細フロー（`calls`、Mermaid用の`nodes`/`edges`/`loopSpans`）を返す
+- **Phase 1の制約**：モジュール横断の呼び出し解決はしない。他モジュールへの`calls`は常に`resolved:false`になるが、これは「呼び出し先が存在しない」という意味ではなく「このツールが他モジュールを確認していない」という意味
+- ディスクへの保存は一切しない（常にその場でJSON応答を返すのみ）
+- `sourceHash`（正規化済みコードのSHA256）が応答に含まれる。将来の鮮度検知機能向けの下地で、現時点では比較には使われない
+- 読み取り専用。VBAプロジェクトオブジェクトモデルへのアクセス（Trust Center設定）が必要
+
+## 8. AIエージェント向けの「リファレンス」について
 
 各ツール・各パラメータの説明文（description）がMCPプロトコル経由でAIクライアントに自動的に渡るため、これが実質的なリファレンスとして機能する。コードと説明文が常に同期する方が別ファイル保守よりズレるリスクが低いため、別途リファレンス文書は用意していない。
