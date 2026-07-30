@@ -120,12 +120,15 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 
 ## 8. 外部・プラットフォーム依存のリストアップ（`vba_list_dependencies`）
 
-VBAコード内の「Excel外部への依存」を、簡易な正規表現マッチで一覧化する。`excel_update_module_code`の`lintWarnings`と同程度の厳密さ（簡易テキストマッチ、本物のVBAパーサーではない）で、動的な呼び出しやコメントアウトされたコードを見逃す・稀に誤検知する可能性がある。
+VBAコード内の「Excel外部への依存」を、簡易な正規表現マッチで一覧化する。`excel_update_module_code`の`lintWarnings`と同程度の厳密さ（簡易テキストマッチ、本物のVBAパーサーではない）。
 
-- 検出対象：Windows API宣言（`Declare Sub`/`Declare Function`）、`CreateObject`/`GetObject`によるCOM自動化呼び出し（ProgIDが文字列リテラルなら抽出、変数指定なら`dynamic:true`）、VBA組み込みの`Shell`関数呼び出し
+- 検出対象：Windows API宣言（`Declare Sub`/`Declare Function`）、`CreateObject`/`GetObject`によるCOM自動化呼び出し、VBA組み込みの`Shell`関数呼び出し、`Application.Run`（他ブックの文字列指定を含む動的マクロ呼び出し）、VBAネイティブのファイルI/O（`Open`/`Kill`/`FileCopy`/`MkDir`/`RmDir`）、`Workbooks.Open`（外部ブック参照）
+- ProgID・呼び出し先名・参照先パスが文字列リテラルなら抽出、変数指定なら`dynamic:true`
+- 行全体がコメント（`'`または`Rem`で始まる）の場合はスキップされる。ただしコード行末尾のインラインコメント（`Kill "x" ' メモ`等）は文字列リテラルとの区別が難しいため除外していない
+- `Application.Run`の検出は`vba_analyze_flow`を補完する：呼び出し元が見つからないプロシージャは、実は`Application.Run`で名前指定されて動的に呼ばれているだけかもしれない。「未使用」と断定する前にこちらも確認するとよい
 - `module`省略時：ワークブック内の全モジュールを1回のCOMセッションでスキャン
 - 検出0件のモジュールはレスポンスから省略される
-- 読み取り専用。Office Scripts等への移行検討時に「VBA外で何をしているか」を洗い出す用途を想定
+- 読み取り専用。Office Scripts等への移行検討時に「VBA外で何をしているか」「他にどのファイルに依存しているか」を洗い出す用途を想定
 
 ## 9. AIエージェント向けの「リファレンス」について
 

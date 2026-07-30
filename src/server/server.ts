@@ -1067,7 +1067,7 @@ $res | ConvertTo-Json -Depth 6
 
 server.tool(
   "vba_list_dependencies",
-  "Scan VBA module source for external/platform dependencies via lightweight regex matching -- Windows API 'Declare' statements, CreateObject/GetObject COM automation calls, and VBA's built-in Shell function calls. Read-only and advisory: this is best-effort text matching (not a real VBA parser), at the same rigor level as excel_update_module_code's lintWarnings -- it can miss dynamic or commented-out cases, and can rarely false-positive on text that merely resembles the pattern inside an unrelated string literal. Useful for scoping migration work (e.g. Office Scripts has no equivalent for any of these) or auditing what a workbook automates outside VBA itself. Omit 'module' to scan every module in the workbook in a single COM session; pass it to scan only that module. Modules with zero findings are omitted from the response. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  "Scan VBA module source for external/platform dependencies via lightweight regex matching -- Windows API 'Declare' statements, CreateObject/GetObject COM automation calls, VBA's built-in Shell function calls, Application.Run (dynamic macro dispatch, including cross-workbook targets), native VBA file I/O (Open/Kill/FileCopy/MkDir/RmDir), and Workbooks.Open (external workbook references). Read-only and advisory: this is best-effort text matching (not a real VBA parser), at the same rigor level as excel_update_module_code's lintWarnings -- it can miss dynamic or commented-out cases, and can rarely false-positive on text that merely resembles the pattern inside an unrelated string literal. A procedure with no incoming calls found by vba_analyze_flow is not necessarily unused -- check here for an Application.Run dispatching to it by name before concluding that. Useful for scoping migration work (e.g. Office Scripts has no equivalent for any of these), auditing what a workbook automates outside VBA itself, or finding which other files must travel together with this workbook (Workbooks.Open targets). Omit 'module' to scan every module in the workbook in a single COM session; pass it to scan only that module. Modules with zero findings are omitted from the response. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
@@ -1103,7 +1103,14 @@ server.tool(
     }
 
     const scans: ModuleDependencyScan[] = targetModules.map((m) => scanModuleForDependencies(m.name, m.code));
-    const nonEmptyScans = scans.filter((s) => s.apiDeclares.length > 0 || s.comObjects.length > 0 || s.shellCalls.length > 0);
+    const nonEmptyScans = scans.filter((s) =>
+      s.apiDeclares.length > 0 ||
+      s.comObjects.length > 0 ||
+      s.shellCalls.length > 0 ||
+      s.applicationRunCalls.length > 0 ||
+      s.fileIo.length > 0 ||
+      s.externalWorkbooks.length > 0
+    );
 
     const summary = {
       modulesScanned: targetModules.length,
@@ -1111,6 +1118,9 @@ server.tool(
       apiDeclares: scans.reduce((sum, s) => sum + s.apiDeclares.length, 0),
       comObjects: scans.reduce((sum, s) => sum + s.comObjects.length, 0),
       shellCalls: scans.reduce((sum, s) => sum + s.shellCalls.length, 0),
+      applicationRunCalls: scans.reduce((sum, s) => sum + s.applicationRunCalls.length, 0),
+      fileIo: scans.reduce((sum, s) => sum + s.fileIo.length, 0),
+      externalWorkbooks: scans.reduce((sum, s) => sum + s.externalWorkbooks.length, 0),
     };
 
     const res: Record<string, unknown> = {
