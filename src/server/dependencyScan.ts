@@ -44,7 +44,15 @@ export interface ApplicationRunEntry {
 export interface FileIoEntry {
   module: string;
   line: number;
-  operation: "open" | "kill" | "filecopy" | "mkdir" | "rmdir";
+  operation:
+    | "open" | "kill" | "filecopy" | "mkdir" | "rmdir"
+    | "fso_opentextfile" | "fso_createtextfile" | "fso_copyfile" | "fso_deletefile"
+    | "fso_movefile" | "fso_createfolder" | "fso_deletefolder" | "fso_movefolder";
+  // true for the fso_* operations: matched by method name only (e.g. ".CopyFile(")
+  // with no way to confirm the object it's called on is actually a
+  // Scripting.FileSystemObject instance -- some other object with a
+  // same-named method would also match. false for the native VBA statements.
+  methodNameOnly: boolean;
   raw: string;
 }
 
@@ -80,12 +88,26 @@ const RX_SHELL = /(?<![\w."])\bShell\b\s*[("]/gi;
 const RX_APPLICATION_RUN = /\bApplication\.Run\s*\(?\s*(?:"([^"]*)")?/gi;
 const RX_WORKBOOKS_OPEN = /\bWorkbooks\.Open\s*\(?\s*(?:"([^"]*)")?/gi;
 
-const FILE_IO_PATTERNS: { operation: FileIoEntry["operation"]; regex: RegExp }[] = [
-  { operation: "open", regex: /\bOpen\s+.+\bFor\s+(?:Input|Output|Append|Random|Binary)\b/i },
-  { operation: "kill", regex: /\bKill\s+\S/i },
-  { operation: "filecopy", regex: /\bFileCopy\s+\S/i },
-  { operation: "mkdir", regex: /\bMkDir\s+\S/i },
-  { operation: "rmdir", regex: /\bRmDir\s+\S/i },
+const FILE_IO_PATTERNS: { operation: FileIoEntry["operation"]; methodNameOnly: boolean; regex: RegExp }[] = [
+  { operation: "open", methodNameOnly: false, regex: /\bOpen\s+.+\bFor\s+(?:Input|Output|Append|Random|Binary)\b/i },
+  { operation: "kill", methodNameOnly: false, regex: /\bKill\s+\S/i },
+  { operation: "filecopy", methodNameOnly: false, regex: /\bFileCopy\s+\S/i },
+  { operation: "mkdir", methodNameOnly: false, regex: /\bMkDir\s+\S/i },
+  { operation: "rmdir", methodNameOnly: false, regex: /\bRmDir\s+\S/i },
+  // FileSystemObject methods -- matched by name only, no type-tracking of the
+  // variable they're called on (see FileIoEntry.methodNameOnly). No trailing
+  // "(" requirement: Sub-like methods (CopyFile/DeleteFile/MoveFile/*Folder)
+  // are commonly called without parens as a statement (`fso.CopyFile "a", "b"`),
+  // only Function-like ones (OpenTextFile/CreateTextFile, used with Set x = ...)
+  // reliably have them.
+  { operation: "fso_opentextfile", methodNameOnly: true, regex: /\.OpenTextFile\b/i },
+  { operation: "fso_createtextfile", methodNameOnly: true, regex: /\.CreateTextFile\b/i },
+  { operation: "fso_copyfile", methodNameOnly: true, regex: /\.CopyFile\b/i },
+  { operation: "fso_deletefile", methodNameOnly: true, regex: /\.DeleteFile\b/i },
+  { operation: "fso_movefile", methodNameOnly: true, regex: /\.MoveFile\b/i },
+  { operation: "fso_createfolder", methodNameOnly: true, regex: /\.CreateFolder\b/i },
+  { operation: "fso_deletefolder", methodNameOnly: true, regex: /\.DeleteFolder\b/i },
+  { operation: "fso_movefolder", methodNameOnly: true, regex: /\.MoveFolder\b/i },
 ];
 
 export function scanModuleForDependencies(moduleName: string, code: string): ModuleDependencyScan {
@@ -170,7 +192,7 @@ export function scanModuleForDependencies(moduleName: string, code: string): Mod
 
     for (const p of FILE_IO_PATTERNS) {
       if (p.regex.test(line)) {
-        fileIo.push({ module: moduleName, line: lineNo, operation: p.operation, raw: line.trim() });
+        fileIo.push({ module: moduleName, line: lineNo, operation: p.operation, methodNameOnly: p.methodNameOnly, raw: line.trim() });
       }
     }
   });

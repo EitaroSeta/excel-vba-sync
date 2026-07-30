@@ -122,8 +122,9 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 
 VBAコード内の「Excel外部への依存」を、簡易な正規表現マッチで一覧化する。`excel_update_module_code`の`lintWarnings`と同程度の厳密さ（簡易テキストマッチ、本物のVBAパーサーではない）。
 
-- 検出対象：Windows API宣言（`Declare Sub`/`Declare Function`）、`CreateObject`/`GetObject`によるCOM自動化呼び出し、VBA組み込みの`Shell`関数呼び出し、`Application.Run`（他ブックの文字列指定を含む動的マクロ呼び出し）、VBAネイティブのファイルI/O（`Open`/`Kill`/`FileCopy`/`MkDir`/`RmDir`）、`Workbooks.Open`（外部ブック参照）
+- 検出対象：Windows API宣言（`Declare Sub`/`Declare Function`）、`CreateObject`/`GetObject`によるCOM自動化呼び出し、VBA組み込みの`Shell`関数呼び出し、`Application.Run`（他ブックの文字列指定を含む動的マクロ呼び出し）、VBAネイティブのファイルI/O（`Open`/`Kill`/`FileCopy`/`MkDir`/`RmDir`）、`Scripting.FileSystemObject`のファイル/フォルダ操作メソッド（`OpenTextFile`/`CreateTextFile`/`CopyFile`/`DeleteFile`/`MoveFile`/`CreateFolder`/`DeleteFolder`/`MoveFolder`）、`Workbooks.Open`（外部ブック参照）
 - ProgID・呼び出し先名・参照先パスが文字列リテラルなら抽出、変数指定なら`dynamic:true`
+- FSOのメソッド検出はメソッド名だけで判定している（呼び出し元の変数が本当にFSOのインスタンスかは確認していない）。`fileIo`の各件に付く`methodNameOnly:true`がこのケースの目印で、同名メソッドを持つ別のオブジェクトも拾ってしまう可能性がある
 - 行全体がコメント（`'`または`Rem`で始まる）の場合はスキップされる。ただしコード行末尾のインラインコメント（`Kill "x" ' メモ`等）は文字列リテラルとの区別が難しいため除外していない
 - `Application.Run`の検出は`vba_analyze_flow`を補完する：呼び出し元が見つからないプロシージャは、実は`Application.Run`で名前指定されて動的に呼ばれているだけかもしれない。「未使用」と断定する前にこちらも確認するとよい
 - `module`省略時：ワークブック内の全モジュールを1回のCOMセッションでスキャン

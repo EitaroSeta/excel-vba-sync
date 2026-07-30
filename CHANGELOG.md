@@ -11,6 +11,14 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.58] - 2026-07-30
+### ### Added
+- `vba_list_dependencies`'s `fileIo` detector now also covers `Scripting.FileSystemObject` file/folder methods (`OpenTextFile`/`CreateTextFile`/`CopyFile`/`DeleteFile`/`MoveFile`/`CreateFolder`/`DeleteFolder`/`MoveFolder`), not just the native VBA `Open`/`Kill`/`FileCopy`/`MkDir`/`RmDir` statements added in v0.0.56 -- since the category is named "file I/O", FSO's own file operations belong in it too. Each `fileIo` entry now carries `methodNameOnly`: `false` for the native statements, `true` for the FSO methods (matched by method name alone -- e.g. any `.CopyFile(...)` call, with no way to verify the object it's called on is actually an FSO instance; documented as a known precision limit, same tier as the rest of this tool).
+- Verified via a unit test covering all 8 FSO methods plus a native `Kill`, including both call styles VBA allows for Sub-like FSO methods (with and without parentheses, e.g. `fso.CopyFile "a", "b"` as well as `fso.CopyFile("a", "b")`) and confirming a commented-out FSO call is correctly excluded.
+
+### ### Fixed
+- Caught while editing `server.ts` for this change (before release): PowerShell's backtick escape sequences ( `` `f `` = form feed, `` `n `` = newline, `` `t `` = tab, `` `r `` = carriage return, etc.) are live inside a double-quoted string being used to build a *replacement* string for `.Replace()` in the byte-safe SJIS-editing scripts used throughout this project -- a description string that used backtick-quoting around parameter names (e.g. `` `fileIo` ``, intended as Markdown-style code-span quoting) silently produced a literal form-feed control character in the compiled tool description instead, because `` `f `` was interpreted as PowerShell's form-feed escape rather than a literal backtick. Caught by an explicit control-character scan (not by `hasReplacementChar`/`hasTab` alone, which don't check for other C0 control codes) before this reached a release. Fixed by not using backtick-quoting in PowerShell-constructed replacement text at all -- single quotes or plain words only.
+
 ## [0.0.57] - 2026-07-30
 ### ### Added
 - `vba_list_dependencies` now also detects `Application.Run` (dynamic macro dispatch, including cross-workbook string targets like `'Book.xlsm'!Module.Proc`; flagged `dynamic:true` when the target is a variable rather than a literal), native VBA file I/O (`Open`/`Kill`/`FileCopy`/`MkDir`/`RmDir`), and `Workbooks.Open` (external workbook references, same static/dynamic distinction as `Application.Run`). Same read-only, advisory, regex-based approach as the three detectors added in v0.0.56.
