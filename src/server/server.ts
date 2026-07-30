@@ -7,6 +7,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { createHash } from "node:crypto";
+import { scanModuleForDependencies, ModuleDependencyScan } from "./dependencyScan.js";
 const execFileAsyncRaw = promisify(execFile);
 // Serializes all Excel-COM-touching PowerShell invocations so concurrent MCP tool
 // calls (e.g. an agent firing off excel_list_modules/excel_list_macros/excel_read_range
@@ -982,6 +983,144 @@ server.tool(
     } finally {
       try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* noop */ }
     }
+  }
+);
+
+// ------------------------------------------------------------ vba_list_dependencies ------------------------------------------------------------
+// Resolves the workbook once via COM, then reads every VBA module's current code into
+// memory in a single PowerShell session (no temp files -- unlike vba_analyze_flow/
+// vba_render_flowchart, this tool never invokes an external script; the matching is
+// pure regex over the text, done in dependencyScan.ts). Read-only, advisory only.
+async function readAllModulesCode(
+  wbEscaped: string,
+  wbPathEscaped: string
+): Promise<
+  | { ok: true; workbook: string; modules: { name: string; componentType: number; code: string }[]; launchedExcelPid?: number }
+  | { ok: false; content: { type: "text"; text: string }[]; isError: true }
+> {
+  const dotSource = dotSourceExcelUtil();
+  const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPathEscaped}' -WorkbookName '${wbEscaped}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { Test-VbaTrustAccess -Workbook $wb | Out-Null }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+$mods = New-Object System.Collections.Generic.List[object]
+try {
+  foreach ($vbc in $wb.VBProject.VBComponents) {
+    $cm = $vbc.CodeModule
+    $code = if ($cm.CountOfLines -gt 0) { $cm.Lines(1, $cm.CountOfLines) } else { "" }
+    $mods.Add(@{ name = $vbc.Name; componentType = [int]$vbc.Type; code = $code })
+  }
+} catch {
+  @{ ok=$false; error='read_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+  exit
+}
+
+$res = @{ ok=$true; workbook=$wb.Name; modules=$mods.ToArray() }
+if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+$res | ConvertTo-Json -Depth 6
+`.trim();
+
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+      { windowsHide: true, encoding: "buffer", timeout: 30000, maxBuffer: 8 * 1024 * 1024 }
+    );
+    const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+    const classified = classifyResult(outText);
+    if (classified.isError) {
+      return { ok: false, content: classified.content, isError: true };
+    }
+
+    let payload: any = null;
+    try {
+      const start = Math.min(...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; }));
+      payload = Number.isFinite(start) ? JSON.parse(outText.slice(start)) : null;
+    } catch { /* noop */ }
+
+    if (!payload?.ok) {
+      return { ok: false, content: [{ type: "text", text: outText }], isError: true };
+    }
+
+    return {
+      ok: true,
+      workbook: payload.workbook,
+      modules: payload.modules ?? [],
+      launchedExcelPid: payload.launchedExcelPid,
+    };
+  } catch (e: any) {
+    return { ok: false, content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
+  }
+}
+
+server.tool(
+  "vba_list_dependencies",
+  "Scan VBA module source for external/platform dependencies via lightweight regex matching -- Windows API 'Declare' statements, CreateObject/GetObject COM automation calls, and VBA's built-in Shell function calls. Read-only and advisory: this is best-effort text matching (not a real VBA parser), at the same rigor level as excel_update_module_code's lintWarnings -- it can miss dynamic or commented-out cases, and can rarely false-positive on text that merely resembles the pattern inside an unrelated string literal. Useful for scoping migration work (e.g. Office Scripts has no equivalent for any of these) or auditing what a workbook automates outside VBA itself. Omit 'module' to scan every module in the workbook in a single COM session; pass it to scan only that module. Modules with zero findings are omitted from the response. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    module: z.string().optional().describe("VBA module name to scan. Omit to scan every module in the workbook in one call."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+
+    const readResult = await readAllModulesCode(wb, wbPath);
+    if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
+
+    let targetModules = readResult.modules;
+    if (params.module) {
+      targetModules = targetModules.filter((m) => m.name === params.module);
+      if (targetModules.length === 0) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ok: false,
+              error: "module_not_found",
+              module: params.module,
+              availableModules: readResult.modules.map((m) => m.name),
+            }),
+          }],
+          isError: true,
+        };
+      }
+    }
+
+    const scans: ModuleDependencyScan[] = targetModules.map((m) => scanModuleForDependencies(m.name, m.code));
+    const nonEmptyScans = scans.filter((s) => s.apiDeclares.length > 0 || s.comObjects.length > 0 || s.shellCalls.length > 0);
+
+    const summary = {
+      modulesScanned: targetModules.length,
+      modulesWithFindings: nonEmptyScans.length,
+      apiDeclares: scans.reduce((sum, s) => sum + s.apiDeclares.length, 0),
+      comObjects: scans.reduce((sum, s) => sum + s.comObjects.length, 0),
+      shellCalls: scans.reduce((sum, s) => sum + s.shellCalls.length, 0),
+    };
+
+    const res: Record<string, unknown> = {
+      ok: true,
+      workbook: readResult.workbook,
+      summary,
+      modules: nonEmptyScans,
+    };
+    if (readResult.launchedExcelPid) { res.launchedExcelPid = readResult.launchedExcelPid; }
+    return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
   }
 );
 

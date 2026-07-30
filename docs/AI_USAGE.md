@@ -16,7 +16,7 @@
    - Claude Code: プロジェクトルートの`.mcp.json`
    - Claude Desktop: `claude_desktop_config.json`
    - 既存の設定がある場合はファイル全体を上書きせず、`mcpServers`オブジェクトに`excel-vba-sync`のエントリだけを追記する
-3. AIクライアントを再起動 → 10ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `excel_update_module_code` / `excel_read_range`）が使用可能に
+3. AIクライアントを再起動 → 11ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `excel_update_module_code` / `excel_read_range`）が使用可能に
 
 ### 1.2 VS Code内蔵・VS Code拡張機能型のAIクライアント（Copilot Chat / Codex 等）
 
@@ -118,6 +118,15 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 - `procedure`省略時：モジュール内の全プロシージャの呼び出し関係を示すコールグラフ（`vba_analyze_flow`と同様、他モジュールへの呼び出しも解決される）
 - こちらもディスクには一切保存しない（一時フォルダで生成→読み取り→即削除）。返ってきたMermaidテキストをMarkdownプレビューやmermaid.live等に貼り付けて図として見る
 
-## 8. AIエージェント向けの「リファレンス」について
+## 8. 外部・プラットフォーム依存のリストアップ（`vba_list_dependencies`）
+
+VBAコード内の「Excel外部への依存」を、簡易な正規表現マッチで一覧化する。`excel_update_module_code`の`lintWarnings`と同程度の厳密さ（簡易テキストマッチ、本物のVBAパーサーではない）で、動的な呼び出しやコメントアウトされたコードを見逃す・稀に誤検知する可能性がある。
+
+- 検出対象：Windows API宣言（`Declare Sub`/`Declare Function`）、`CreateObject`/`GetObject`によるCOM自動化呼び出し（ProgIDが文字列リテラルなら抽出、変数指定なら`dynamic:true`）、VBA組み込みの`Shell`関数呼び出し
+- `module`省略時：ワークブック内の全モジュールを1回のCOMセッションでスキャン
+- 検出0件のモジュールはレスポンスから省略される
+- 読み取り専用。Office Scripts等への移行検討時に「VBA外で何をしているか」を洗い出す用途を想定
+
+## 9. AIエージェント向けの「リファレンス」について
 
 各ツール・各パラメータの説明文（description）がMCPプロトコル経由でAIクライアントに自動的に渡るため、これが実質的なリファレンスとして機能する。コードと説明文が常に同期する方が別ファイル保守よりズレるリスクが低いため、別途リファレンス文書は用意していない。
