@@ -16,7 +16,7 @@
    - Claude Code: プロジェクトルートの`.mcp.json`
    - Claude Desktop: `claude_desktop_config.json`
    - 既存の設定がある場合はファイル全体を上書きせず、`mcpServers`オブジェクトに`excel-vba-sync`のエントリだけを追記する
-3. AIクライアントを再起動 → 11ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `excel_update_module_code` / `excel_read_range`）が使用可能に
+3. AIクライアントを再起動 → 12ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `vba_list_references` / `excel_update_module_code` / `excel_read_range`）が使用可能に
 
 ### 1.2 VS Code内蔵・VS Code拡張機能型のAIクライアント（Copilot Chat / Codex 等）
 
@@ -131,6 +131,17 @@ VBAコード内の「Excel外部への依存」を、簡易な正規表現マッ
 - 検出0件のモジュールはレスポンスから省略される
 - 読み取り専用。Office Scripts等への移行検討時に「VBA外で何をしているか」「他にどのファイルに依存しているか」を洗い出す用途を想定
 
-## 9. AIエージェント向けの「リファレンス」について
+## 9. イベントプロシージャ・シート/名前定義参照のリストアップ（`vba_list_references`）
+
+「このコードは何をきっかけに動くか」「このシート・名前付き範囲を変更/削除したら何が壊れるか」という影響調査向け。`vba_list_dependencies`と同じ正規表現ベース・読み取り専用のアプローチだが、対象が「外部依存」ではなく「ワークブック内部への参照」である点が異なるため別ツールにしている。
+
+- 検出対象：イベントプロシージャ（`Workbook_*`/`Worksheet_*`/`UserForm_*`。VBA自身の命名規則をそのまま使うので、個別のイベント名一覧を持つ必要がない。加えてレガシーな`Auto_Open`/`Auto_Close`）、シート参照（`Worksheets("名前")`/`Sheets("名前")`）、名前付き範囲の可能性がある参照（`Range("...")`/`Names("...")`）
+- 埋め込みActiveXコントロールのイベント（`CommandButton1_Click`等）は検出しない（コントロール名の把握にDesigner/OLEObjectsの読み取りが必要で、このツールのスコープ外）
+- `Range("...")`はセルアドレスそのもの（`A1`、`B2:C10`、`A:A`等）に見える場合は除外する。実際のコードでは大半のRange呼び出しが単なるセル参照であり、含めると名前付き範囲の兆候が埋もれてしまうため。変数指定の動的な`Range(変数)`も同様の理由で対象外（`Names(...)`は逆に、Namesコレクションを使っている時点で名前付き範囲がらみと言えるため動的指定でも検出する）
+- `Range("プレフィックス" & 行番号)`のような文字列連結によるセル範囲構築は、閉じ引用符の直後が`)`または`,`でない（＝リテラルが引数全体ではない）場合は除外される
+- イベントプロシージャの検出は`vba_analyze_flow`・`vba_list_dependencies`の`Application.Run`検出と合わせて考えるとよい：呼び出し元が見つからないプロシージャも、①イベントプロシージャである、②`Application.Run`で動的に呼ばれている、のどちらかであれば未使用ではない
+- `module`省略時：ワークブック内の全モジュールを1回のCOMセッションでスキャン。検出0件のモジュールはレスポンスから省略される
+
+## 10. AIエージェント向けの「リファレンス」について
 
 各ツール・各パラメータの説明文（description）がMCPプロトコル経由でAIクライアントに自動的に渡るため、これが実質的なリファレンスとして機能する。コードと説明文が常に同期する方が別ファイル保守よりズレるリスクが低いため、別途リファレンス文書は用意していない。

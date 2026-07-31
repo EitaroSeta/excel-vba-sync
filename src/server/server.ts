@@ -8,6 +8,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { createHash } from "node:crypto";
 import { scanModuleForDependencies, ModuleDependencyScan } from "./dependencyScan.js";
+import { scanModuleForReferences, ModuleReferenceScan } from "./referenceScan.js";
 const execFileAsyncRaw = promisify(execFile);
 // Serializes all Excel-COM-touching PowerShell invocations so concurrent MCP tool
 // calls (e.g. an agent firing off excel_list_modules/excel_list_macros/excel_read_range
@@ -1121,6 +1122,73 @@ server.tool(
       applicationRunCalls: scans.reduce((sum, s) => sum + s.applicationRunCalls.length, 0),
       fileIo: scans.reduce((sum, s) => sum + s.fileIo.length, 0),
       externalWorkbooks: scans.reduce((sum, s) => sum + s.externalWorkbooks.length, 0),
+    };
+
+    const res: Record<string, unknown> = {
+      ok: true,
+      workbook: readResult.workbook,
+      summary,
+      modules: nonEmptyScans,
+    };
+    if (readResult.launchedExcelPid) { res.launchedExcelPid = readResult.launchedExcelPid; }
+    return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+  }
+);
+
+// ------------------------------------------------------------ vba_list_references ------------------------------------------------------------
+// Reuses readAllModulesCode (defined above, for vba_list_dependencies) -- same
+// single-COM-session snapshot of every module, no new COM/PowerShell logic needed
+// here. The regex matching itself lives in referenceScan.ts, pure and COM-free.
+server.tool(
+  "vba_list_references",
+  "List event-procedure entry points and internal Excel object references via lightweight regex matching. Event procedures: Workbook_*/Worksheet_*/UserForm_* (matched by VBA's own naming convention, so no event-name list is needed) plus legacy Auto_Open/Auto_Close -- these are candidate triggers for code the user never calls directly, so a procedure with no incoming calls in vba_analyze_flow is not necessarily unused if it's one of these (or is dispatched by vba_list_dependencies' Application.Run). Embedded ActiveX control events (e.g. CommandButton1_Click) are NOT detected -- telling those apart from an ordinary Sub needs the sheet/form's control names, which this tool does not read. References: Worksheets(...)/Sheets(...) by name (sheetName is the literal when static, null with dynamic:true otherwise), and likely named-range references via Range(...)/Names(...) -- Range(\"...\") is only reported when the literal does NOT look like a plain cell address (e.g. \"A1\", \"B2:C10\"), since those make up the overwhelming majority of ordinary Range(...) calls and would otherwise drown out genuine named-range references; dynamic Range(variable) calls are not reported at all for the same reason (most are computed cell addresses, not named-range access), while Names(...) is reported even when dynamic since any use of the Names collection is inherently about a named range. Useful for impact analysis: what triggers exist in this workbook, and what would break if a given sheet were renamed/deleted or a named range were removed. Read-only and advisory -- best-effort text matching, not a real VBA parser, at the same rigor level as vba_list_dependencies and excel_update_module_code's lintWarnings. Omit 'module' to scan every module in the workbook in a single COM session; modules with no findings in any category are omitted from the response. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    module: z.string().optional().describe("VBA module name to scan. Omit to scan every module in the workbook in one call."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+
+    const readResult = await readAllModulesCode(wb, wbPath);
+    if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
+
+    let targetModules = readResult.modules;
+    if (params.module) {
+      targetModules = targetModules.filter((m) => m.name === params.module);
+      if (targetModules.length === 0) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ok: false,
+              error: "module_not_found",
+              module: params.module,
+              availableModules: readResult.modules.map((m) => m.name),
+            }),
+          }],
+          isError: true,
+        };
+      }
+    }
+
+    const scans: ModuleReferenceScan[] = targetModules.map((m) => scanModuleForReferences(m.name, m.code));
+    const nonEmptyScans = scans.filter((s) =>
+      s.eventProcedures.length > 0 ||
+      s.sheetReferences.length > 0 ||
+      s.namedRangeReferences.length > 0
+    );
+
+    const summary = {
+      modulesScanned: targetModules.length,
+      modulesWithFindings: nonEmptyScans.length,
+      eventProcedures: scans.reduce((sum, s) => sum + s.eventProcedures.length, 0),
+      sheetReferences: scans.reduce((sum, s) => sum + s.sheetReferences.length, 0),
+      namedRangeReferences: scans.reduce((sum, s) => sum + s.namedRangeReferences.length, 0),
     };
 
     const res: Record<string, unknown> = {
