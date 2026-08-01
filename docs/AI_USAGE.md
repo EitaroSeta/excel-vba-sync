@@ -16,7 +16,7 @@
    - Claude Code: プロジェクトルートの`.mcp.json`
    - Claude Desktop: `claude_desktop_config.json`
    - 既存の設定がある場合はファイル全体を上書きせず、`mcpServers`オブジェクトに`excel-vba-sync`のエントリだけを追記する
-3. AIクライアントを再起動 → 12ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `vba_list_references` / `excel_update_module_code` / `excel_read_range`）が使用可能に
+3. AIクライアントを再起動 → 13ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `vba_list_references` / `vba_list_variable_scopes` / `excel_update_module_code` / `excel_read_range`）が使用可能に
 
 ### 1.2 VS Code内蔵・VS Code拡張機能型のAIクライアント（Copilot Chat / Codex 等）
 
@@ -108,6 +108,7 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 - `procedure`省略時：モジュール内の全プロシージャの`{name, kind, startLine, endLine}`一覧のみを軽量に返す（`excel_list_macros`の`moduleName`省略パターンと同じ設計）。存在するプロシージャ名を知らない場合はまずこちらを使う
 - `procedure`指定時：該当プロシージャの詳細フロー（`calls`、Mermaid用の`nodes`/`edges`/`loopSpans`）を返す
 - モジュール横断の呼び出し解決に対応済み：ワークブック内の全モジュールを一時フォルダに並べてから解析するため、他モジュールで定義された関数への呼び出しも`resolved:true`になる。`resolved:false`は「ワークブック内のどこにも呼び出し先が見つからなかった」ことを意味する
+- クロスモジュール解決はPublic/Private（Friend含む）の可視性を正しく区別する：別モジュールのPrivateプロシージャと偶然同名の呼び出しは、実際のVBAではコンパイルエラーになる組み合わせなので`resolved:false`のままになる（同一モジュール内からの自分自身のPrivateプロシージャ呼び出しは引き続き`resolved:true`）
 - ディスクへの保存は一切しない（常にその場でJSON応答を返すのみ）
 - `sourceHash`（正規化済みコードのSHA256）が応答に含まれる。将来の鮮度検知機能向けの下地で、現時点では比較には使われない
 - 読み取り専用。VBAプロジェクトオブジェクトモデルへのアクセス（Trust Center設定）が必要
@@ -142,6 +143,16 @@ VBAコード内の「Excel外部への依存」を、簡易な正規表現マッ
 - イベントプロシージャの検出は`vba_analyze_flow`・`vba_list_dependencies`の`Application.Run`検出と合わせて考えるとよい：呼び出し元が見つからないプロシージャも、①イベントプロシージャである、②`Application.Run`で動的に呼ばれている、のどちらかであれば未使用ではない
 - `module`省略時：ワークブック内の全モジュールを1回のCOMセッションでスキャン。検出0件のモジュールはレスポンスから省略される
 
-## 10. AIエージェント向けの「リファレンス」について
+## 10. 変数・定数のスコープ一覧（`vba_list_variable_scopes`）
+
+VBEの「検索と置換」（検索対象：現在のプロジェクト）は文字列の単純置換なので、スコープを理解しない。別のプロシージャにあるたまたま同名のローカル変数まで巻き込んでしまう危険がある。このツールは、変数・定数の宣言を`procedure`（そのプロシージャ内だけのローカル）/`module`（モジュール内のみ）/`public`（プロジェクト全体）に分類し、リネーム時の本当の影響範囲を事前に把握できるようにする。
+
+- 検出対象：`Dim`/`Private`/`Public`/`Static`/`Const`による宣言
+- `declaredIn`：`procedure`スコープの場合、そのプロシージャ名。`vba_analyze_flow`のそのプロシージャの`startLine`/`endLine`と組み合わせれば、`vba_search_code`（`moduleFilter`指定）での検索範囲を絞り込める
+- このツール自体は「宣言がどこにあるか・どのスコープか」だけを返す。実際の使用箇所（参照）一覧は返さない（`vba_search_code`と組み合わせて使う想定）
+- `Dim x As Long, y As String`のような1行複数宣言や、`Dim arr(1 To 10, 1 To 5) As Variant`のような多次元配列の引数内カンマにも対応（配列境界のカンマで誤分割しない）
+- `module`省略時：ワークブック内の全モジュールを1回のCOMセッションでスキャン。宣言が1件も無いモジュールはレスポンスから省略される
+
+## 11. AIエージェント向けの「リファレンス」について
 
 各ツール・各パラメータの説明文（description）がMCPプロトコル経由でAIクライアントに自動的に渡るため、これが実質的なリファレンスとして機能する。コードと説明文が常に同期する方が別ファイル保守よりズレるリスクが低いため、別途リファレンス文書は用意していない。

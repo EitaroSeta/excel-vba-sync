@@ -185,20 +185,32 @@ function BuildSymbolTable {
   param([string]$Folder, [string]$FileEncoding = "UTF8")
   if(-not (Test-Path -LiteralPath $Folder -PathType Container)){ throw "Folder not found: $Folder" }
   $table = @{}
+  $publicTable = @{}
   $files = @(Get-ChildItem -LiteralPath $Folder -File -Recurse -Include *.bas,*.cls,*.frm)
   foreach($f in $files){
     $lines  = @(JoinContinuations (ReadFileLines -Path $f.FullName -FileEncoding $FileEncoding))
     $module = GetModuleName -Lines $lines -Fallback $f.Name
     if(-not $table.ContainsKey($module)){ $table[$module] = New-Object System.Collections.Generic.HashSet[string] }
+    if(-not $publicTable.ContainsKey($module)){ $publicTable[$module] = New-Object System.Collections.Generic.HashSet[string] }
     foreach($ln in $lines){
-      #if($ln -match '^\s*(?:(?:Public|Private|Friend)\s+)?(Sub|Function|Property\s+(?:Get|Let|Set))\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*\('){
-      if($ln -match '^\s*(?:(?:Public|Private|Friend)\s+)?(Sub|Function|Property\s+(?:Get|Let|Set))\s+(?<name>[\p{L}_][\p{L}\p{N}_]*)\s*\('){
+      # Named 'scope' group lets cross-module resolution respect Private visibility
+      # (see AnalyzeProcedure below) -- a Private procedure is only callable from
+      # within its own module, so it must not satisfy an unqualified call resolved
+      # against a DIFFERENT module's symbol table.
+      if($ln -match '^\s*(?<scope>Public\s+|Private\s+|Friend\s+)?(Sub|Function|Property\s+(?:Get|Let|Set))\s+(?<name>[\p{L}_][\p{L}\p{N}_]*)\s*\('){
         [void]$table[$module].Add($Matches.name)
+        # No modifier defaults to Public in VBA; Friend is project-wide visible
+        # (same as Public for this single-workbook analysis). Only an explicit
+        # Private keyword hides a procedure from other modules.
+        if(-not $Matches['scope'] -or $Matches['scope'].Trim() -ne 'Private'){
+          [void]$publicTable[$module].Add($Matches.name)
+        }
       }
     }
   }
   $out = @{}; foreach($k in $table.Keys){ $out[$k] = @($table[$k]) }
-  return $out
+  $outPublic = @{}; foreach($k in $publicTable.Keys){ $outPublic[$k] = @($publicTable[$k]) }
+  return @{ all = $out; public = $outPublic }
 }
 
 # 手続き抽出（対象ファイル）
@@ -877,13 +889,18 @@ if($trim -match '^\s*ElseIf\s+(.+)\s+Then\s*$'){
         $target=$null; $resolved=$false
         if($c.module){
           $target = "$($c.module).$($c.name)"
-          if($SymbolTable.ContainsKey($c.module) -and ($SymbolTable[$c.module] -contains $c.name)){ $resolved=$true }
+          # Self-qualified calls (Module1 calling Module1.Foo) may legally target a
+          # Private procedure; a call qualified with a DIFFERENT module name may not.
+          $qualifiedTable = if($c.module -eq $ThisModule){ $SymbolTable.all } else { $SymbolTable.public }
+          if($qualifiedTable.ContainsKey($c.module) -and ($qualifiedTable[$c.module] -contains $c.name)){ $resolved=$true }
         } else {
-          if($SymbolTable.ContainsKey($ThisModule) -and ($SymbolTable[$ThisModule] -contains $c.name)){
+          if($SymbolTable.all.ContainsKey($ThisModule) -and ($SymbolTable.all[$ThisModule] -contains $c.name)){
             $target="$ThisModule.$($c.name)"; $resolved=$true
           } else {
-            foreach($m in $SymbolTable.Keys){
-              if($SymbolTable[$m] -contains $c.name){ $target="$m.$($c.name)"; $resolved=$true; break }
+            # Cross-module fallback for an unqualified call: only Public/Friend
+            # procedures in OTHER modules are visible here, never Private ones.
+            foreach($m in $SymbolTable.public.Keys){
+              if($SymbolTable.public[$m] -contains $c.name){ $target="$m.$($c.name)"; $resolved=$true; break }
             }
             if(-not $target){ $target = $c.name }
           }
@@ -1019,7 +1036,7 @@ $out = [pscustomobject]@{
     filePath  =(Resolve-Path -LiteralPath $FilePath).Path
     moduleName=$module
   }
-  symbols=$symbolTable
+  symbols=$symbolTable.all
   procedures=$procOut
   mermaid_global=[pscustomobject]@{
     direction='TD'
