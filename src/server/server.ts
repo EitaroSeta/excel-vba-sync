@@ -9,7 +9,7 @@ import * as os from "node:os";
 import { createHash } from "node:crypto";
 import { scanModuleForDependencies, ModuleDependencyScan } from "./dependencyScan.js";
 import { scanModuleForReferences, ModuleReferenceScan } from "./referenceScan.js";
-import { scanModuleForVariableScopes, ModuleVariableScopeScan } from "./variableScopeScan.js";
+import { scanModuleForVariableScopes, ModuleVariableScopeScan, resolveVariableUsages } from "./variableScopeScan.js";
 const execFileAsyncRaw = promisify(execFile);
 // Serializes all Excel-COM-touching PowerShell invocations so concurrent MCP tool
 // calls (e.g. an agent firing off excel_list_modules/excel_list_macros/excel_read_range
@@ -1209,11 +1209,13 @@ server.tool(
 // here. The regex matching itself lives in variableScopeScan.ts, pure and COM-free.
 server.tool(
   "vba_list_variable_scopes",
-  "List variable and constant declarations (Dim/Private/Public/Static/Const) classified by scope: 'procedure' (local to one Sub/Function/Property -- declaredIn names it), 'module' (Private, or unmarked Dim/Const at module level -- visible module-wide but not from other modules), or 'public' (Public at module level -- visible from anywhere in the project). This exists because VBE's own Find & Replace ('Search In: Current Project') is a blind text substitution with no concept of scope: it will happily replace an unrelated local variable in a completely different procedure just because it shares the same name. Check here FIRST to learn a declaration's true boundary, then either use VBE's search scoped to just that boundary, or vba_search_code with moduleFilter (and, for a procedure-scoped declaration, that procedure's startLine/endLine from vba_analyze_flow) to actually find/verify occurrences safely -- this tool itself only lists declarations, not usage sites. Read-only and advisory: best-effort text matching, not a real VBA parser, at the same rigor level as vba_list_dependencies/vba_list_references (e.g. `Static Sub Foo()` is correctly excluded as a procedure header rather than a Static variable, but no attempt is made to parse array bounds, string lengths, or line-continuation edge cases beyond the ordinary `Dim x As Long, y As String` and `Dim arr(1 To 10, 1 To 5) As Variant`-style comma splitting). Omit 'module' to scan every module in the workbook in a single COM session; modules with no declarations are omitted from the response. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  "List variable and constant declarations (Dim/Private/Public/Static/Const) classified by scope: 'procedure' (local to one Sub/Function/Property -- declaredIn names it), 'module' (Private, or unmarked Dim/Const at module level -- visible module-wide but not from other modules), or 'public' (Public at module level -- visible from anywhere in the project). This exists because VBE's own Find & Replace ('Search In: Current Project') is a blind text substitution with no concept of scope: it will happily replace an unrelated local variable in a completely different procedure just because it shares the same name. Omit 'variableName' to list every declaration in 'module' (or the whole workbook if 'module' is also omitted) -- this establishes a declaration's true boundary. Provide 'variableName' (module becomes required) to instead find every usage of that one declaration within its correct boundary: module-/public-scoped lookups automatically skip any procedure that shadows the name with its own local declaration, so an unrelated same-named local elsewhere is never mixed in. If the name matches more than one declaration in 'module' (several procedures each with their own same-named local, or a module-level declaration itself shadowed by a same-named local somewhere), the response is ambiguous_declaration listing every candidate (scope, declaredIn, line) -- pass 'procedure' (matching a candidate's declaredIn) to pick one. Each usage is classified 'write' (matched via a Set-optional assignment pattern near the line start) or 'reference' (everything else -- not distinguishing a read from e.g. an 'If name = x Then' comparison beyond that). The declaration's own line is never included as a usage. Read-only and advisory throughout: best-effort text matching, not a real VBA parser, at the same rigor level as vba_list_dependencies/vba_list_references (e.g. 'Static Sub Foo()' is correctly excluded as a procedure header rather than a Static variable, but no attempt is made to parse array bounds, string lengths, or line-continuation edge cases beyond the ordinary 'Dim x As Long, y As String' and 'Dim arr(1 To 10, 1 To 5) As Variant'-style comma splitting). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
-    module: z.string().optional().describe("VBA module name to scan. Omit to scan every module in the workbook in one call."),
+    module: z.string().optional().describe("VBA module name to scan. Omit to scan every module in the workbook in one call (list-declarations mode only -- required when variableName is given)."),
+    variableName: z.string().optional().describe("Variable or constant name to find usages of. Provide this to switch from listing declarations to finding usage sites; when given, 'module' becomes required."),
+    procedure: z.string().optional().describe("Disambiguates which declaration 'variableName' refers to, when more than one exists in 'module' -- match it against a candidate's declaredIn from the ambiguous_declaration error. Only meaningful together with 'variableName'."),
   },
   async (params) => {
     if (!params.workbook && !params.workbookPath) {
@@ -1224,6 +1226,30 @@ server.tool(
 
     const readResult = await readAllModulesCode(wb, wbPath);
     if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
+
+    if (params.variableName) {
+      if (!params.module) {
+        return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "module is required when variableName is given" }) }], isError: true };
+      }
+      const usageResult = resolveVariableUsages(params.module, params.variableName, params.procedure ?? null, readResult.modules);
+      if (!usageResult.ok) {
+        const errRes: Record<string, unknown> = { ok: false, error: usageResult.error, variableName: usageResult.variableName };
+        if (usageResult.error === "ambiguous_declaration") { errRes.candidates = usageResult.candidates; }
+        if (usageResult.error === "declaration_not_found") { errRes.module = params.module; }
+        return { content: [{ type: "text", text: JSON.stringify(errRes) }], isError: true };
+      }
+      const writes = usageResult.usages.filter((u) => u.kind === "write").length;
+      const usageRes: Record<string, unknown> = {
+        ok: true,
+        workbook: readResult.workbook,
+        mode: "usages",
+        declaration: usageResult.declaration,
+        usages: usageResult.usages,
+        summary: { total: usageResult.usages.length, writes, references: usageResult.usages.length - writes },
+      };
+      if (readResult.launchedExcelPid) { usageRes.launchedExcelPid = readResult.launchedExcelPid; }
+      return { content: [{ type: "text", text: JSON.stringify(usageRes, null, 2) }] };
+    }
 
     let targetModules = readResult.modules;
     if (params.module) {
@@ -1258,6 +1284,7 @@ server.tool(
     const res: Record<string, unknown> = {
       ok: true,
       workbook: readResult.workbook,
+      mode: "declarations",
       summary,
       modules: nonEmptyScans,
     };

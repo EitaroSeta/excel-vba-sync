@@ -177,7 +177,7 @@ code --install-extension "$OUT"
 | `vba_render_flowchart` | プロシージャの制御フロー、またはモジュールの呼び出しグラフをMermaid図として取得 / Get a procedure's control flow, or a module's call graph, as a Mermaid diagram |
 | `vba_list_dependencies` | Windows API宣言・CreateObject・Shell呼び出し等を正規表現で一覧化 / List Windows API declares, CreateObject calls, Shell calls, etc. via regex matching |
 | `vba_list_references` | イベントプロシージャ・シート/名前付き範囲参照を正規表現で一覧化 / List event procedures and sheet/named-range references via regex matching |
-| `vba_list_variable_scopes` | 変数・定数宣言をスコープ（プロシージャ/モジュール/プロジェクト）別に一覧化 / List variable/constant declarations by scope (procedure/module/project) |
+| `vba_list_variable_scopes` | 変数・定数宣言をスコープ別に一覧化、または指定変数の使用箇所をスコープを考慮して検索 / List variable/constant declarations by scope, or scope-aware search for a given variable's usages |
 | `excel_list_macros` | 実行可能なマクロ（Public Sub）の一覧を取得 / List runnable macros (Public Subs) |
 | `excel_run_macro` | マクロを実行 / Run a macro |
 | `excel_read_range` | セル範囲の値を読み取り（マクロの実行結果検証等に） / Read cell values from a range (e.g. to verify a macro's effect) |

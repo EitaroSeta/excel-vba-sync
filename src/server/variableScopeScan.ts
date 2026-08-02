@@ -83,7 +83,7 @@ function parseDeclKeyword(line: string): ParsedDeclKeyword | null {
   return null;
 }
 
-function findProcedureBounds(lines: string[]): ProcedureBounds[] {
+export function findProcedureBounds(lines: string[]): ProcedureBounds[] {
   const bounds: ProcedureBounds[] = [];
   let open: { name: string; startLine: number } | null = null;
   lines.forEach((line, idx) => {
@@ -99,7 +99,7 @@ function findProcedureBounds(lines: string[]): ProcedureBounds[] {
   return bounds;
 }
 
-function findEnclosingProcedure(lineNo: number, bounds: ProcedureBounds[]): ProcedureBounds | null {
+export function findEnclosingProcedure(lineNo: number, bounds: ProcedureBounds[]): ProcedureBounds | null {
   for (const b of bounds) {
     if (lineNo >= b.startLine && lineNo <= b.endLine) { return b; }
   }
@@ -162,4 +162,120 @@ export function scanModuleForVariableScopes(moduleName: string, code: string): M
   });
 
   return { module: moduleName, declarations };
+}
+
+// ------------------------------------------------------------------------
+// Usage-site search for one already-declared variable/constant, scope-aware.
+// Complements the declaration listing above: given a name (and, when
+// ambiguous, which procedure's local it refers to), finds every line that
+// actually uses it -- within the correct boundary, and never a same-named
+// but unrelated declaration elsewhere.
+
+export interface VariableUsageEntry {
+  module: string;
+  line: number;
+  kind: "write" | "reference";
+  raw: string;
+}
+
+export type ResolveVariableUsagesResult =
+  | { ok: true; declaration: VariableDeclaration; usages: VariableUsageEntry[] }
+  | { ok: false; error: "declaration_not_found"; variableName: string }
+  | { ok: false; error: "ambiguous_declaration"; variableName: string; candidates: VariableDeclaration[] };
+
+function findUsagesInLines(
+  moduleName: string,
+  lines: string[],
+  variableName: string,
+  excludeLineNumbers: Set<number>
+): VariableUsageEntry[] {
+  const usages: VariableUsageEntry[] = [];
+  const wordBoundary = new RegExp(`\\b${variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+  // Anchors near the start of the line (after optional Set) so an incidental
+  // read like `y = x + 1` isn't mistaken for a write to x; deliberately not
+  // trying to distinguish assignment from an `If x = y Then` comparison
+  // beyond that (same best-effort tier as the rest of this file).
+  const writePattern = new RegExp(`^\\s*(?:Set\\s+)?${variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=(?!=)`, "i");
+
+  lines.forEach((line, idx) => {
+    const lineNo = idx + 1;
+    if (excludeLineNumbers.has(lineNo)) { return; }
+    if (/^\s*(?:'|Rem\b)/i.test(line)) { return; }
+    if (!wordBoundary.test(line)) { return; }
+    usages.push({
+      module: moduleName,
+      line: lineNo,
+      kind: writePattern.test(line) ? "write" : "reference",
+      raw: line.trim(),
+    });
+  });
+
+  return usages;
+}
+
+export function resolveVariableUsages(
+  targetModule: string,
+  variableName: string,
+  procedureHint: string | null,
+  modules: { name: string; code: string }[]
+): ResolveVariableUsagesResult {
+  const target = modules.find((m) => m.name === targetModule);
+  if (!target) { return { ok: false, error: "declaration_not_found", variableName }; }
+
+  const targetScan = scanModuleForVariableScopes(targetModule, target.code);
+  let candidates = targetScan.declarations.filter((d) => d.name === variableName);
+  if (candidates.length === 0) { return { ok: false, error: "declaration_not_found", variableName }; }
+
+  if (candidates.length > 1 && procedureHint) {
+    candidates = candidates.filter((d) => d.declaredIn === procedureHint);
+  }
+  if (candidates.length !== 1) {
+    return { ok: false, error: "ambiguous_declaration", variableName, candidates: targetScan.declarations.filter((d) => d.name === variableName) };
+  }
+  const declaration = candidates[0];
+
+  const targetLines = target.code.split(/\r\n|\r|\n/);
+  const targetBounds = findProcedureBounds(targetLines);
+
+  if (declaration.scope === "procedure") {
+    const bound = targetBounds.find((b) => b.name === declaration.declaredIn);
+    const lines = bound ? targetLines.slice(bound.startLine - 1, bound.endLine) : [];
+    const offset = bound ? bound.startLine - 1 : 0;
+    const raw = findUsagesInLines(targetModule, lines, variableName, new Set([declaration.line - offset]));
+    const usages = raw.map((u) => ({ ...u, line: u.line + offset }));
+    return { ok: true, declaration, usages };
+  }
+
+  // module/public scope: shadowing exclusion -- any procedure in a scanned
+  // module that has its OWN local declaration of the same name is skipped
+  // entirely for that module, since within it the name resolves locally.
+  function shadowedRanges(scan: ModuleVariableScopeScan, bounds: ProcedureBounds[]): Set<number> {
+    const excluded = new Set<number>();
+    for (const d of scan.declarations) {
+      if (d.name === variableName && d.scope === "procedure") {
+        const b = bounds.find((x) => x.name === d.declaredIn);
+        if (b) { for (let ln = b.startLine; ln <= b.endLine; ln++) { excluded.add(ln); } }
+      }
+    }
+    return excluded;
+  }
+
+  const usages: VariableUsageEntry[] = [];
+
+  const targetExcluded = shadowedRanges(targetScan, targetBounds);
+  targetExcluded.add(declaration.line);
+  usages.push(...findUsagesInLines(targetModule, targetLines, variableName, targetExcluded));
+
+  if (declaration.scope === "public") {
+    for (const m of modules) {
+      if (m.name === targetModule) { continue; }
+      const mLines = m.code.split(/\r\n|\r|\n/);
+      const mBounds = findProcedureBounds(mLines);
+      const mScan = scanModuleForVariableScopes(m.name, m.code);
+      const mExcluded = shadowedRanges(mScan, mBounds);
+      usages.push(...findUsagesInLines(m.name, mLines, variableName, mExcluded));
+    }
+  }
+
+  return { ok: true, declaration, usages };
 }
