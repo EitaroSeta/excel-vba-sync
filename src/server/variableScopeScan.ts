@@ -38,7 +38,13 @@ interface ProcedureBounds {
   endLine: number;
 }
 
-const RX_PROC_HEAD = /^\s*(?:(?:Public|Private|Friend)\s+)?(?:Static\s+)?(Sub|Function|Property\s+(?:Get|Let|Set))\s+([A-Za-z_]\w*)\s*\(/i;
+// [\p{L}\p{N}_] (Unicode letter/number, requires the "u" flag) rather than
+// plain \w, which is ASCII-only -- VBA identifiers can be Japanese (e.g. a
+// real procedure named "cidr出力"), and \w would silently fail to match the
+// whole line, making findProcedureBounds miss the procedure entirely rather
+// than just mis-parsing its name. Mirrors VBA-FlowJson.ps1's own ParseProcedures
+// regex ([\p{L}_][\p{L}\p{N}_]*), which already handles this correctly.
+const RX_PROC_HEAD = /^\s*(?:(?:Public|Private|Friend)\s+)?(?:Static\s+)?(Sub|Function|Property\s+(?:Get|Let|Set))\s+([\p{L}_][\p{L}\p{N}_]*)\s*\(/iu;
 const RX_PROC_END = /^\s*End\s+(?:Sub|Function|Property)\b/i;
 
 const RX_PROC_KEYWORD_AFTER_DECL = /^(Sub|Function|Property)\b/i;
@@ -147,7 +153,7 @@ export function scanModuleForVariableScopes(moduleName: string, code: string): M
     const kind: VariableDeclaration["kind"] = parsed.isConst ? "constant" : "variable";
 
     for (const segment of splitTopLevelCommas(parsed.rest)) {
-      const nameMatch = /^\s*([A-Za-z_]\w*)/.exec(segment);
+      const nameMatch = /^\s*([\p{L}_][\p{L}\p{N}_]*)/u.exec(segment);
       if (!nameMatch) { continue; }
       declarations.push({
         module: moduleName,
@@ -190,12 +196,18 @@ function findUsagesInLines(
   excludeLineNumbers: Set<number>
 ): VariableUsageEntry[] {
   const usages: VariableUsageEntry[] = [];
-  const wordBoundary = new RegExp(`\\b${variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+  const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Manual lookaround, not \b: JS's \b is defined in terms of ASCII \w, so it
+  // fails to bound a Japanese identifier correctly (neither side of e.g. the
+  // position right after "力" in "cidr出力" is an ASCII \w character, so \b
+  // never matches there at all). Uses the same identifier character class
+  // (\p{L}\p{N}_) as the declaration-matching regexes above.
+  const wordBoundary = new RegExp(`(?<![\\p{L}\\p{N}_])${escapedName}(?![\\p{L}\\p{N}_])`, "iu");
   // Anchors near the start of the line (after optional Set) so an incidental
   // read like `y = x + 1` isn't mistaken for a write to x; deliberately not
   // trying to distinguish assignment from an `If x = y Then` comparison
   // beyond that (same best-effort tier as the rest of this file).
-  const writePattern = new RegExp(`^\\s*(?:Set\\s+)?${variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=(?!=)`, "i");
+  const writePattern = new RegExp(`^\\s*(?:Set\\s+)?${escapedName}\\s*=(?!=)`, "iu");
 
   lines.forEach((line, idx) => {
     const lineNo = idx + 1;
