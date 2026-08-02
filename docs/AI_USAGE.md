@@ -60,6 +60,14 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 
 未使用変数・デッドコード検出等のより広範なルールは未実装。
 
+**新規モジュール作成モード**
+`moduleType`（`"standard"`=.bas、`"class"`=.cls）を指定すると、`module`は「既存モジュールの上書き対象」ではなく「新規作成するモジュール名（まだ存在しないこと）」に意味が変わる。流れはdryRun/confirmTokenの2段階のまま：
+- dryRunレスポンスは`mode:"create"`。`confirmToken`は既存コードではなく`(module, moduleType, newCode)`に紐付く（差分対象の既存コードが無いため）
+- dryRunと確定呼び出しの間に同名モジュールが（他クライアント経由等で）作られてしまった場合は`ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN`で拒否（実機で再現・正しい拒否を確認済み）
+- 新規作成のためバックアップは作成されない（退避対象が無いため）
+- UserForm（.frm）の新規作成は非対応（デザイナ・`.frx`バイナリが絡むため）
+- `moduleType`を省略した場合の挙動（既存モジュール上書き）は完全に従来通り
+
 ## 4. Excelプロセスの自動解決
 
 ### 4.1 workbookPathによる自動起動・自動オープン

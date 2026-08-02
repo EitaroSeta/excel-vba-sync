@@ -1379,6 +1379,71 @@ try {
   }
 }
 
+// Existence check only, used by excel_update_module_code create-mode (moduleType set):
+// distinguishes "module not found" (expected -- safe to create) from any other kind of
+// failure (Excel not found, workbook not resolved, trust access denied), which must NOT
+// be treated as safe-to-create and should propagate as a real error instead.
+async function checkModuleExists(
+  wbEscaped: string,
+  wbPathEscaped: string,
+  modEscaped: string
+): Promise<
+  | { ok: true; workbook: string; exists: boolean; launchedExcelPid?: number }
+  | { ok: false; content: { type: "text"; text: string }[]; isError: true }
+> {
+  const dotSource = dotSourceExcelUtil();
+  const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPathEscaped}' -WorkbookName '${wbEscaped}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { Test-VbaTrustAccess -Workbook $wb | Out-Null }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+$exists = $true
+try { $wb.VBProject.VBComponents.Item('${modEscaped}') | Out-Null } catch { $exists = $false }
+
+$existsRes = @{ ok=$true; workbook=$wb.Name; exists=$exists }
+if ($r.LaunchedProcessId) { $existsRes.launchedExcelPid = $r.LaunchedProcessId }
+$existsRes | ConvertTo-Json -Depth 6
+`.trim();
+
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+      { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2 * 1024 * 1024 }
+    );
+    const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+    const classified = classifyResult(outText);
+    if (classified.isError) {
+      return { ok: false, content: classified.content, isError: true };
+    }
+
+    let payload: any = null;
+    try {
+      const start = Math.min(...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; }));
+      payload = Number.isFinite(start) ? JSON.parse(outText.slice(start)) : null;
+    } catch { /* noop */ }
+
+    if (!payload?.ok) {
+      return { ok: false, content: [{ type: "text", text: outText }], isError: true };
+    }
+
+    return { ok: true, workbook: payload.workbook, exists: !!payload.exists, launchedExcelPid: payload.launchedExcelPid };
+  } catch (e: any) {
+    return { ok: false, content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
+  }
+}
+
 // Tier 1 static checks only (regex/text-based, no real VBA parser). See the
 // excel-vba-sync-dev skill's references/vba-lint-tiers.md for the full 40-rule
 // catalog this is drawn from, and why Tier 2/3 rules are deferred (they need
@@ -1457,14 +1522,15 @@ function lintVbaCode(code: string): VbaLintWarning[] {
 
 server.tool(
   "excel_update_module_code",
-  "Overwrite the code of an EXISTING VBA module (cannot create new modules, and cannot target .frm UserForm modules -- fails with ERR_UNSUPPORTED_MODULE_TYPE). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules. The dry-run response also includes lintWarnings: a best-effort, regex-based static check (not a real VBA parser) for a small set of common issues -- Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing Option Explicit, UsedRange, bare End statements, overly long procedures, missing Set before an object assignment, Declare without PtrSafe, and hardcoded file numbers. These are advisory only and never block the write.",
+  "Overwrite the code of an EXISTING VBA module, or create a brand-new one when moduleType is set (cannot target .frm UserForm modules either way -- overwriting one fails with ERR_UNSUPPORTED_MODULE_TYPE, and UserForms cannot be created via this tool at all). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules. The dry-run response also includes lintWarnings: a best-effort, regex-based static check (not a real VBA parser) for a small set of common issues -- Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing Option Explicit, UsedRange, bare End statements, overly long procedures, missing Set before an object assignment, Declare without PtrSafe, and hardcoded file numbers. These are advisory only and never block the write. To create a new module instead of overwriting one, pass moduleType ('standard' or 'class') together with a module name that does not yet exist. The dry-run response then reports mode as 'create', and the confirmToken is bound to (module, moduleType, newCode) rather than to any existing code, since none exists yet. If a module with that name is created by someone else between the dry-run and the confirming call, the write is rejected with ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN instead of colliding with it. No backup is written when creating a new module (there is nothing to back up), and the response's componentType is 1 for a standard module or 2 for a class module.",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
-    module: z.string().describe("Name of an EXISTING VBA module to overwrite. New modules cannot be created via this tool."),
+    module: z.string().describe("Name of a VBA module. When moduleType is omitted, this must be an EXISTING module to overwrite. When moduleType is set, this is the name of a NEW module to create -- it must not already exist."),
+    moduleType: z.enum(["standard", "class"]).optional().describe("Set this to create module NAME as a brand-new module instead of overwriting an existing one. 'standard' = .bas (StdModule), 'class' = .cls (Class module). UserForm modules cannot be created this way. Omit this parameter entirely to overwrite an existing module (unchanged default behavior)."),
     newCode: z.string().describe("Full replacement source code for the module (procedure bodies only -- do not include Attribute lines)."),
-    dryRun: z.boolean().optional().describe("If true, only preview the change (current vs new code) and return a confirmToken; does not write anything."),
-    confirmToken: z.string().optional().describe("Token obtained from a prior dryRun:true call with the identical workbook/module/newCode. Required to actually perform the write. Rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN if the module's code no longer matches what the dry-run saw."),
+    dryRun: z.boolean().optional().describe("If true, only preview the change (or, in create mode, the module that would be created) and return a confirmToken; does not write anything."),
+    confirmToken: z.string().optional().describe("Token obtained from a prior dryRun:true call with the identical workbook/module/moduleType/newCode. Required to actually perform the write. Rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN in overwrite mode, or ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN in create mode, if the target changed since the dry-run."),
   },
   async (params) => {
     const wb = psq(params.workbook ?? "");
@@ -1477,6 +1543,29 @@ server.tool(
 
     // --- dry-run: read the current code, compute a confirmToken bound to it, do not write anything ---
     if (params.dryRun) {
+      if (params.moduleType) {
+        // --- create-mode dry-run: the module must NOT already exist ---
+        const existsResult = await checkModuleExists(wb, wbPath, mod);
+        if (!existsResult.ok) { return { content: existsResult.content, isError: existsResult.isError }; }
+        if (existsResult.exists) {
+          return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "module_already_exists", module: params.module }) }], isError: true };
+        }
+        const createToken = computeConfirmToken(params.module, "__CREATE__", params.newCode);
+        const createPreview: Record<string, unknown> = {
+          ok: true,
+          mode: "create",
+          workbook: existsResult.workbook,
+          module: params.module,
+          moduleType: params.moduleType,
+          newCode: params.newCode,
+          lintWarnings: lintVbaCode(params.newCode),
+          confirmToken: createToken,
+          note: "Call this tool again with the same workbook/module/moduleType/newCode and this confirmToken to create the module. If a module with this name gets created by someone else before that call, the write will be rejected with ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN instead of colliding with it.",
+        };
+        if (existsResult.launchedExcelPid) { createPreview.launchedExcelPid = existsResult.launchedExcelPid; }
+        return { content: [{ type: "text", text: JSON.stringify(createPreview, null, 2) }] };
+      }
+
       const readResult = await readCurrentModuleCode(wb, wbPath, mod);
       if (!readResult.ok) { return { content: readResult.content, isError: readResult.isError }; }
 
@@ -1505,25 +1594,45 @@ server.tool(
       };
     }
 
-    // --- re-read the current code immediately before writing (optimistic concurrency check):
-    // if it no longer matches what the dry-run saw, someone else changed it in the meantime --
-    // reject instead of silently overwriting that change. ---
-    const freshRead = await readCurrentModuleCode(wb, wbPath, mod);
-    if (!freshRead.ok) { return { content: freshRead.content, isError: freshRead.isError }; }
+    // --- re-verify immediately before writing (optimistic concurrency check), branching on
+    // whether this is a create (moduleType set) or an overwrite (moduleType omitted). ---
+    if (params.moduleType) {
+      const existsResult = await checkModuleExists(wb, wbPath, mod);
+      if (!existsResult.ok) { return { content: existsResult.content, isError: existsResult.isError }; }
+      const createToken = computeConfirmToken(params.module, "__CREATE__", params.newCode);
+      if (existsResult.exists || params.confirmToken !== createToken) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ok: false,
+              error: "ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN",
+              detail: "A module with this name already exists (created since the dry-run, e.g. by another client), or the confirmToken does not match this workbook/module/moduleType/newCode. Re-run with dryRun:true to get a fresh token before retrying, or omit moduleType to overwrite the existing module instead.",
+            }),
+          }],
+          isError: true,
+        };
+      }
+    } else {
+      // if it no longer matches what the dry-run saw, someone else changed it in the meantime --
+      // reject instead of silently overwriting that change. ---
+      const freshRead = await readCurrentModuleCode(wb, wbPath, mod);
+      if (!freshRead.ok) { return { content: freshRead.content, isError: freshRead.isError }; }
 
-    const expectedToken = computeConfirmToken(params.module, freshRead.currentCode, params.newCode);
-    if (params.confirmToken !== expectedToken) {
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify({
-            ok: false,
-            error: "ERR_MODULE_CHANGED_SINCE_DRYRUN",
-            detail: "The module's code has changed since the dry-run (or the confirmToken does not match this workbook/module/newCode). Re-run with dryRun:true to get a fresh token before retrying, to avoid overwriting a change made by another client in the meantime.",
-          }),
-        }],
-        isError: true,
-      };
+      const expectedToken = computeConfirmToken(params.module, freshRead.currentCode, params.newCode);
+      if (params.confirmToken !== expectedToken) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ok: false,
+              error: "ERR_MODULE_CHANGED_SINCE_DRYRUN",
+              detail: "The module's code has changed since the dry-run (or the confirmToken does not match this workbook/module/newCode). Re-run with dryRun:true to get a fresh token before retrying, to avoid overwriting a change made by another client in the meantime.",
+            }),
+          }],
+          isError: true,
+        };
+      }
     }
 
     // --- perform the write via import_single_module.ps1 (reuses Import-ModuleToVBProject; never
@@ -1550,6 +1659,7 @@ server.tool(
         "-SourceCodePath", tmpFile,
         "-ScriptsDir", scriptsDir,
       ];
+      if (params.moduleType) { args.push("-ModuleType", params.moduleType); }
       const { stdout } = await execFileAsync("powershell.exe", args, {
         windowsHide: true,
         encoding: "buffer",

@@ -11,8 +11,9 @@
 param (
     [string]$WorkbookPath,                                   # 対象ワークブックのフルパス（優先。Resolve-TargetWorkbookに渡す）
     [string]$WorkbookName,                                   # フルパス未指定時のフォールバック（既にオープン済みのブック名で照合）
-    [Parameter(Mandatory=$true)][string]$ModuleName,        # 対象モジュール名（既存モジュールのみ。新規追加は非対応）
+    [Parameter(Mandatory=$true)][string]$ModuleName,        # 対象モジュール名（ModuleType未指定時は既存モジュールのみ。指定時は新規作成するモジュール名）
     [Parameter(Mandatory=$true)][string]$SourceCodePath,    # 書き込むコード本文が入ったUTF-8テキストファイルのパス
+    [string]$ModuleType,                                     # 指定時のみ新規作成モード。"standard"=StdModule(.bas) / "class"=Class(.cls)
     [string]$ScriptsDir = $PSScriptRoot
 )
 
@@ -61,6 +62,32 @@ try {
 $vbproject = $wb.VBProject
 if ($vbproject.Protection -ne 0) {
     Write-ResultAndExit @{ ok = $false; error = "ERR_WORKBOOK_PROTECTED"; workbook = $wb.Name } 1
+}
+
+if ($ModuleType) {
+    # --- 新規モジュール作成モード（$ModuleType指定時のみ。既存の上書きパスとは別経路） ---
+    $existing = $null
+    try { $existing = $vbproject.VBComponents.Item($ModuleName) } catch {}
+    if ($existing) {
+        Write-ResultAndExit @{ ok = $false; error = "module_already_exists"; module = $ModuleName } 1
+    }
+
+    $newType = if ($ModuleType -eq "class") { 2 } else { 1 }  # vbext_ComponentType: 1=StdModule, 2=Class
+    try {
+        $newComp = $vbproject.VBComponents.Add($newType)
+        $newComp.Name = $ModuleName
+    } catch {
+        Write-ResultAndExit @{ ok = $false; error = "create_failed"; module = $ModuleName; detail = "$($_.Exception.Message)" } 1
+    }
+
+    $sourceText = Get-Content -LiteralPath $SourceCodePath -Raw -Encoding UTF8
+    try {
+        $newComp.CodeModule.AddFromString($sourceText)
+    } catch {
+        Write-ResultAndExit @{ ok = $false; error = "create_failed"; module = $ModuleName; detail = "$($_.Exception.Message)" } 1
+    }
+
+    Write-ResultAndExit @{ ok = $true; workbook = $wb.Name; module = $ModuleName; componentType = $newType; created = $true } 0
 }
 
 $targetComp = $null
