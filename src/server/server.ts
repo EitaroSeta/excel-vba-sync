@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { scanModuleForDependencies, ModuleDependencyScan } from "./dependencyScan.js";
 import { scanModuleForReferences, ModuleReferenceScan } from "./referenceScan.js";
 import { scanModuleForVariableScopes, ModuleVariableScopeScan, resolveVariableUsages } from "./variableScopeScan.js";
+import { findCrossModuleDuplicates, CrossModuleDuplicate } from "./duplicateProcedureScan.js";
 const execFileAsyncRaw = promisify(execFile);
 // Serializes all Excel-COM-touching PowerShell invocations so concurrent MCP tool
 // calls (e.g. an agent firing off excel_list_modules/excel_list_macros/excel_read_range
@@ -1444,6 +1445,23 @@ $existsRes | ConvertTo-Json -Depth 6
   }
 }
 
+// Advisory only, dry-run only, best-effort: reads every module in the project (one extra
+// COM round-trip beyond the dry-run's own read) to flag Public procedure names in newCode
+// that already exist in some OTHER module -- catches the case where an agent "moves" a
+// procedure to a new/different module but forgets to also remove the original copy. Never
+// blocks the dry-run itself: any failure here (e.g. a transient COM hiccup) just yields no
+// warnings rather than failing the whole preview.
+async function computeDuplicateProcedureWarnings(
+  wbEscaped: string,
+  wbPathEscaped: string,
+  targetModule: string,
+  newCode: string
+): Promise<CrossModuleDuplicate[]> {
+  const allModules = await readAllModulesCode(wbEscaped, wbPathEscaped);
+  if (!allModules.ok) { return []; }
+  return findCrossModuleDuplicates(targetModule, newCode, allModules.modules);
+}
+
 // Tier 1 static checks only (regex/text-based, no real VBA parser). See the
 // excel-vba-sync-dev skill's references/vba-lint-tiers.md for the full 40-rule
 // catalog this is drawn from, and why Tier 2/3 rules are deferred (they need
@@ -1522,7 +1540,7 @@ function lintVbaCode(code: string): VbaLintWarning[] {
 
 server.tool(
   "excel_update_module_code",
-  "Overwrite the code of an EXISTING VBA module, or create a brand-new one when moduleType is set (cannot target .frm UserForm modules either way -- overwriting one fails with ERR_UNSUPPORTED_MODULE_TYPE, and UserForms cannot be created via this tool at all). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules. The dry-run response also includes lintWarnings: a best-effort, regex-based static check (not a real VBA parser) for a small set of common issues -- Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing Option Explicit, UsedRange, bare End statements, overly long procedures, missing Set before an object assignment, Declare without PtrSafe, and hardcoded file numbers. These are advisory only and never block the write. To create a new module instead of overwriting one, pass moduleType ('standard' or 'class') together with a module name that does not yet exist. The dry-run response then reports mode as 'create', and the confirmToken is bound to (module, moduleType, newCode) rather than to any existing code, since none exists yet. If a module with that name is created by someone else between the dry-run and the confirming call, the write is rejected with ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN instead of colliding with it. No backup is written when creating a new module (there is nothing to back up), and the response's componentType is 1 for a standard module or 2 for a class module.",
+  "Overwrite the code of an EXISTING VBA module, or create a brand-new one when moduleType is set (cannot target .frm UserForm modules either way -- overwriting one fails with ERR_UNSUPPORTED_MODULE_TYPE, and UserForms cannot be created via this tool at all). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules. The dry-run response also includes lintWarnings: a best-effort, regex-based static check (not a real VBA parser) for a small set of common issues -- Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing Option Explicit, UsedRange, bare End statements, overly long procedures, missing Set before an object assignment, Declare without PtrSafe, and hardcoded file numbers. These are advisory only and never block the write. The dry-run response also includes duplicateProcedureWarnings: Public Sub/Function/Property names in newCode that already exist in some OTHER module of the project (Private procedures are not checked, since same-named Private procedures in different modules never collide in VBA) -- this flags the case where a procedure was meant to move to a new/different module but the original copy was left behind, and is advisory only (never blocks the write). To create a new module instead of overwriting one, pass moduleType ('standard' or 'class') together with a module name that does not yet exist. The dry-run response then reports mode as 'create', and the confirmToken is bound to (module, moduleType, newCode) rather than to any existing code, since none exists yet. If a module with that name is created by someone else between the dry-run and the confirming call, the write is rejected with ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN instead of colliding with it. No backup is written when creating a new module (there is nothing to back up), and the response's componentType is 1 for a standard module or 2 for a class module.",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
@@ -1563,6 +1581,7 @@ server.tool(
           note: "Call this tool again with the same workbook/module/moduleType/newCode and this confirmToken to create the module. If a module with this name gets created by someone else before that call, the write will be rejected with ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN instead of colliding with it.",
         };
         if (existsResult.launchedExcelPid) { createPreview.launchedExcelPid = existsResult.launchedExcelPid; }
+        createPreview.duplicateProcedureWarnings = await computeDuplicateProcedureWarnings(wb, wbPath, params.module, params.newCode);
         return { content: [{ type: "text", text: JSON.stringify(createPreview, null, 2) }] };
       }
 
@@ -1583,6 +1602,7 @@ server.tool(
         note: "Call this tool again with the same workbook/module/newCode and this confirmToken to apply the write. If the module's code changes before that call (e.g. another client writes to it first), the token will no longer match and the write will be rejected rather than silently overwriting that change.",
       };
       if (readResult.launchedExcelPid) { preview.launchedExcelPid = readResult.launchedExcelPid; }
+      preview.duplicateProcedureWarnings = await computeDuplicateProcedureWarnings(wb, wbPath, params.module, params.newCode);
       return { content: [{ type: "text", text: JSON.stringify(preview, null, 2) }] };
     }
 

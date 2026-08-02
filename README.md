@@ -181,7 +181,7 @@ code --install-extension "$OUT"
 | `excel_list_macros` | 実行可能なマクロ（Public Sub）の一覧を取得 / List runnable macros (Public Subs) |
 | `excel_run_macro` | マクロを実行 / Run a macro |
 | `excel_read_range` | セル範囲の値を読み取り（マクロの実行結果検証等に） / Read cell values from a range (e.g. to verify a macro's effect) |
-| `excel_update_module_code` | 既存モジュールのコードを書き込み、または`moduleType`指定で新規モジュールを作成（`dryRun`/`confirmToken`の安全フロー付き） / Overwrite an existing module's code, or create a new one by passing `moduleType` (with the `dryRun`/`confirmToken` safety flow) |
+| `excel_update_module_code` | 既存モジュールのコードを書き込み、または`moduleType`指定で新規モジュールを作成（`dryRun`/`confirmToken`の安全フロー付き、他モジュールとの重複プロシージャ名も警告） / Overwrite an existing module's code, or create a new one by passing `moduleType` (with the `dryRun`/`confirmToken` safety flow, plus a cross-module duplicate-procedure-name warning) |
 
 セットアップ手順・安全設計・既知の注意点は **[docs/AI_USAGE.md](docs/AI_USAGE.md)** を参照してください。
 
