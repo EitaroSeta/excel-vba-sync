@@ -1,7 +1,12 @@
 // Regression tests for duplicateProcedureScan.ts (excel_update_module_code's
-// duplicateProcedureWarnings, v0.0.65). Motivated by a real case: moving a Function
-// to a new class module left the original copy behind in the source standard module,
-// unnoticed until reported live -- this scan exists to catch that before the write.
+// duplicateProcedureWarnings, v0.0.65-v0.0.66). Motivated by two real cases found live:
+// (1) moving a Function to a new class module left the original copy behind in the
+// source standard module, unnoticed -- the original public_duplicate check;
+// (2) a newly-added module's own Private helper happened to share a name (IsPrime) with
+// two other modules' Public functions -- no functional collision (VBA resolves the local
+// Private first), but confusing enough that it's worth its own lower-severity risk tier
+// (private_name_reused), added in v0.0.66 after this was found via manual full-text
+// search rather than being caught by the original public-only check.
 "use strict";
 
 const test = require("node:test");
@@ -46,14 +51,33 @@ test("findCrossModuleDuplicates: detects a same-name Public procedure in another
   const dups = findCrossModuleDuplicates("ModNew", newCode, otherModules);
   assert.equal(dups.length, 1);
   assert.deepEqual(
-    { name: dups[0].name, existsInModule: dups[0].existsInModule },
-    { name: "CalcTotal", existsInModule: "ModA" }
+    { name: dups[0].name, existsInModule: dups[0].existsInModule, risk: dups[0].risk },
+    { name: "CalcTotal", existsInModule: "ModA", risk: "public_duplicate" }
   );
 });
 
-test("findCrossModuleDuplicates: a Private procedure with the same name does not count as a collision", () => {
+test("findCrossModuleDuplicates: the OTHER module's Private procedure with the same name does not count as a collision", () => {
   const newCode = "Public Sub CalcTotal()\nEnd Sub\n";
   const otherModules = [{ name: "ModA", code: "Private Sub CalcTotal()\nEnd Sub\n" }];
+  const dups = findCrossModuleDuplicates("ModNew", newCode, otherModules);
+  assert.equal(dups.length, 0);
+});
+
+test("findCrossModuleDuplicates: newCode's own Private procedure sharing a name with a Public one elsewhere is flagged as private_name_reused (real case: a newly-added module's Private helper shared a name with two existing modules' Public functions)", () => {
+  const newCode = "Private Function CalcSomething(n As Long) As Boolean\nEnd Function\n";
+  const otherModules = [
+    { name: "ModExisting1", code: "Public Function CalcSomething(n As Long) As Boolean\nEnd Function\n" },
+    { name: "ModExisting2", code: "Public Function CalcSomething(n As Long) As Boolean\nEnd Function\n" },
+  ];
+  const dups = findCrossModuleDuplicates("ModNew", newCode, otherModules);
+  assert.equal(dups.length, 2);
+  assert.ok(dups.every((d) => d.risk === "private_name_reused"));
+  assert.deepEqual(dups.map((d) => d.existsInModule).sort(), ["ModExisting1", "ModExisting2"]);
+});
+
+test("findCrossModuleDuplicates: newCode's Private procedure vs. another module's Private procedure of the same name is NOT flagged (no functional or readability risk)", () => {
+  const newCode = "Private Sub Helper()\nEnd Sub\n";
+  const otherModules = [{ name: "ModA", code: "Private Sub Helper()\nEnd Sub\n" }];
   const dups = findCrossModuleDuplicates("ModNew", newCode, otherModules);
   assert.equal(dups.length, 0);
 });

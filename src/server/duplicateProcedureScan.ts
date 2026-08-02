@@ -4,6 +4,12 @@
 // copy is left behind unless a separate write also removes it there. This scan flags
 // that situation as an advisory warning before the write happens; it never blocks it.
 //
+// Also flags a softer case, found live: newCode declares a Private procedure whose name
+// happens to already be Public in another module. VBA resolves the same-module Private
+// first, so this is never a real runtime/compile collision -- but it's still confusing to
+// read, and worth surfacing as a lower-severity "risk" distinct from the public-vs-public
+// case (which usually means a stale copy was left behind and should probably be removed).
+//
 // Unicode identifier handling mirrors variableScopeScan.ts's RX_PROC_HEAD (VBA allows
 // non-ASCII identifiers, e.g. Japanese procedure names -- see the v0.0.62 fix there for
 // why \p{L}\p{N}_ instead of \w is required). This regex additionally captures the
@@ -41,6 +47,7 @@ export interface CrossModuleDuplicate {
   kind: string;
   existsInModule: string;
   existsAtLine: number;
+  risk: "public_duplicate" | "private_name_reused";
 }
 
 export function findCrossModuleDuplicates(
@@ -48,17 +55,26 @@ export function findCrossModuleDuplicates(
   newCode: string,
   otherModules: { name: string; code: string }[]
 ): CrossModuleDuplicate[] {
-  const mine = listProcedureSignatures(newCode).filter((p) => p.isPublic);
+  const mine = listProcedureSignatures(newCode);
   if (mine.length === 0) { return []; }
 
   const warnings: CrossModuleDuplicate[] = [];
   for (const mod of otherModules) {
     if (mod.name === targetModule) { continue; }
+    // Only the OTHER module's Public-equivalent procedures are checked against: a Private
+    // procedure there can never be part of a naming collision (own-module Private wins
+    // locally, and it isn't visible from outside its module either way).
     const theirs = listProcedureSignatures(mod.code).filter((p) => p.isPublic);
     for (const candidate of mine) {
       const hit = theirs.find((p) => p.name.toLowerCase() === candidate.name.toLowerCase());
       if (hit) {
-        warnings.push({ name: candidate.name, kind: candidate.kind, existsInModule: mod.name, existsAtLine: hit.line });
+        warnings.push({
+          name: candidate.name,
+          kind: candidate.kind,
+          existsInModule: mod.name,
+          existsAtLine: hit.line,
+          risk: candidate.isPublic ? "public_duplicate" : "private_name_reused",
+        });
       }
     }
   }
