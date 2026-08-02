@@ -2,7 +2,7 @@
     "name": "excel-vba-sync",
     "displayName": "excel-vba-sync",
     "description": "Export VBA modules to VSCode & import them back to Excel.",
-    "version": "0.0.62",
+    "version": "0.0.63",
     "publisher": "9kv8xiyi",
     "license": "MIT",
     "author": {
@@ -207,6 +207,7 @@
         "build": "npm run compile && npm run build:server",
         "compile": "tsc -p ./",
         "build:server": "tsc -p src/server",
+        "test:unit": "npm run build:server && node --test \"src/server/__tests__/*.test.js\"",
         "watch": "tsc -watch -p ./",
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src",

@@ -40,7 +40,7 @@ interface ProcedureBounds {
 
 // [\p{L}\p{N}_] (Unicode letter/number, requires the "u" flag) rather than
 // plain \w, which is ASCII-only -- VBA identifiers can be Japanese (e.g. a
-// real procedure named "cidr出力"), and \w would silently fail to match the
+// real procedure named "出力処理"), and \w would silently fail to match the
 // whole line, making findProcedureBounds miss the procedure entirely rather
 // than just mis-parsing its name. Mirrors VBA-FlowJson.ps1's own ParseProcedures
 // regex ([\p{L}_][\p{L}\p{N}_]*), which already handles this correctly.
@@ -199,7 +199,7 @@ function findUsagesInLines(
   const escapedName = variableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // Manual lookaround, not \b: JS's \b is defined in terms of ASCII \w, so it
   // fails to bound a Japanese identifier correctly (neither side of e.g. the
-  // position right after "力" in "cidr出力" is an ASCII \w character, so \b
+  // position right after "理" in "出力処理" is an ASCII \w character, so \b
   // never matches there at all). Uses the same identifier character class
   // (\p{L}\p{N}_) as the declaration-matching regexes above.
   const wordBoundary = new RegExp(`(?<![\\p{L}\\p{N}_])${escapedName}(?![\\p{L}\\p{N}_])`, "iu");

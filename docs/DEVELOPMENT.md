@@ -27,6 +27,12 @@ npm run compile
 ```
 - VS Code で `F5` を押して **Extension Development Host** を起動
 
+## テスト / Tests
+```powershell
+npm run test:unit
+```
+`src/server/` 配下の純粋ロジック（COM/Excel非依存の正規表現スキャン系、`dependencyScan.ts`/`referenceScan.ts`/`variableScopeScan.ts`など）に対する回帰テストです。`build:server` を先に実行してから、Node標準の `node:test` で `src/server/__tests__/*.test.js` を実行します（新規npm依存なし）。`server.ts` 自体はCOM呼び出しを伴う副作用付きモジュールのためこの対象には含まれません（実機Excelでの手動検証が必要）。
+
 ## 主要コマンド / Key Commands
 - **Export All Modules From VBA** — Excel から VBA モジュールを一括エクスポート
 - **Import Module To VBA** — 編集したモジュールを Excel に取り込み
