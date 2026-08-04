@@ -235,6 +235,148 @@ try {
   }
 );
 
+// Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å° excel_list_worksheets Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°
+server.tool(
+  "excel_list_worksheets",
+  "List the actual worksheets in a workbook (display name, VBA CodeName, index, visibility) -- NOT the VBA code modules (use excel_list_modules for those). A worksheet has two distinct names: its display name (what Worksheets('...') string lookups use, renamable by the user) and its CodeName (what direct Sheet1.Range(...) references use, fixed at creation, and what shows up as the module name for componentType 100 entries in excel_list_modules). Use this before generating VBA code that references a sheet by name, to confirm the exact spelling exists -- a mismatch fails at RUNTIME, not at write time, and there is no other way to detect that in advance. If the expected sheet is not found, do not attempt to create or rename one via VBA code or any other means -- report this to the user so they can create/rename it manually in Excel. Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Worksheets), not VBProject.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const dotSource = dotSourceExcelUtil();
+
+    const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try {
+  $sheets = @()
+  foreach ($ws in @($wb.Worksheets)) {
+    $vis = switch ($ws.Visible) {
+      -1 { 'visible' }
+      0 { 'hidden' }
+      2 { 'veryHidden' }
+      default { 'unknown' }
+    }
+    $sheets += [pscustomobject]@{ name=$ws.Name; codeName=$ws.CodeName; index=$ws.Index; visible=$vis }
+  }
+  $res = @{ ok=$true; workbook=$wb.Name; worksheets=$sheets; count=$sheets.Count }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 6
+} catch {
+  @{ ok=$false; error='list_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+    try {
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+        { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2 * 1024 * 1024 }
+      );
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
+      return extractFailureResult(e);
+    }
+  }
+);
+
+// Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å° excel_list_form_controls Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°
+server.tool(
+  "excel_list_form_controls",
+  "List the controls (textboxes, buttons, labels, etc.) inside one or every UserForm in a workbook's VBA project -- name and type only, not layout/position. Use this before generating VBA code that references a form control by name (e.g. UserForm1.TextBox1), since there is no other way to confirm a control actually exists: excel_get_module_code only returns the form's event-handler code, not its designer-time control layout (that lives in the binary .frm/.frx data). If the expected form or control is not found, do not attempt to create one via VBA code or any other means -- report this to the user so they can add it manually via the VBE form designer. Requires the VBA Trust Center setting (same as excel_list_modules).",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    formName: z.string().optional().describe("Name of one UserForm to inspect. Omit to list controls for every UserForm in the project in a single call."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const formName = psq(params.formName ?? "");
+    const dotSource = dotSourceExcelUtil();
+
+    const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { Test-VbaTrustAccess -Workbook $wb | Out-Null }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+$targetName = '${formName}'
+$comps = @($wb.VBProject.VBComponents)
+
+if ($targetName) {
+  $match = $comps | Where-Object { $_.Name -eq $targetName }
+  if (-not $match) { @{ ok=$false; error='form_not_found'; formName=$targetName } | ConvertTo-Json ; exit }
+  if ($match.Type -ne 3) { @{ ok=$false; error='ERR_NOT_A_USERFORM'; formName=$targetName; componentType=$match.Type } | ConvertTo-Json ; exit }
+  $forms = @($match)
+} else {
+  $forms = @($comps | Where-Object { $_.Type -eq 3 })
+}
+
+try {
+  $result = @()
+  foreach ($f in $forms) {
+    $ctrls = @()
+    try {
+      foreach ($ctrl in @($f.Designer.Controls)) {
+        $ctrlType = [Microsoft.VisualBasic.Information]::TypeName($ctrl)
+        $ctrls += [pscustomobject]@{ name=$ctrl.Name; type=$ctrlType }
+      }
+    } catch {}
+    $result += [pscustomobject]@{ form=$f.Name; controls=$ctrls }
+  }
+  $res = @{ ok=$true; workbook=$wb.Name; forms=$result }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 6
+} catch {
+  @{ ok=$false; error='list_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+    try {
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+        { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2 * 1024 * 1024 }
+      );
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
+      return extractFailureResult(e);
+    }
+  }
+);
+
 // Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å° excel_list_macros Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°
 server.tool(
   "excel_read_range",
