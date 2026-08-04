@@ -16,7 +16,7 @@
    - Claude Code: プロジェクトルートの`.mcp.json`
    - Claude Desktop: `claude_desktop_config.json`
    - 既存の設定がある場合はファイル全体を上書きせず、`mcpServers`オブジェクトに`excel-vba-sync`のエントリだけを追記する
-3. AIクライアントを再起動 → 15ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `vba_list_references` / `vba_list_variable_scopes` / `excel_update_module_code` / `excel_read_range` / `excel_list_worksheets` / `excel_list_form_controls`）が使用可能に
+3. AIクライアントを再起動 → 16ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `vba_list_references` / `vba_list_variable_scopes` / `excel_update_module_code` / `excel_read_range` / `excel_list_worksheets` / `excel_list_form_controls` / `excel_list_defined_names`）が使用可能に
 
 ### 1.2 VS Code内蔵・VS Code拡張機能型のAIクライアント（Copilot Chat / Codex 等）
 
@@ -38,7 +38,7 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 
 - **モジュール一覧だけ欲しい場合** → `excel_list_modules`を使う。`vba_search_code`に`.*`のような全行マッチ正規表現を投げない（コード内容を読まないぶん軽量・高速。力技の全文検索で巨大な結果を返しエラーになった実例あり）
 - **ワークブック全体のマクロ一覧が欲しい場合** → `excel_list_macros`の`moduleName`を省略する。1回の呼び出しで全モジュール分を返す。モジュールごとに1回ずつ呼ぶループは避ける（Excel解決処理がモジュール数だけ繰り返され、応答が返ってこないように見えた実例あり）
-- **AIが生成したVBAコードでシート名・フォームコントロール名を参照する前** → `excel_list_worksheets`（実在するシート名・コード名・表示状態）／`excel_list_form_controls`（UserFormのコントロール名・種類）で実在確認する。存在しない名前を無条件に信じてコードを書くと、書き込み時ではなく**実行時**に初めてエラーになる。どちらも読み取り専用で、シート・フォームコントロールの新規作成/リネームは（AIに一任すべきか判断がまだついていないため）意図的に対象外——見つからなければユーザーに手動作成を促す
+- **AIが生成したVBAコードでシート名・フォームコントロール名・名前付き範囲を参照する前** → `excel_list_worksheets`（実在するシート名・コード名・表示状態）／`excel_list_form_controls`（UserFormのコントロール名・種類）／`excel_list_defined_names`（名前付き範囲・`refersTo`・壊れているかどうか）で実在確認する。存在しない名前を無条件に信じてコードを書くと、書き込み時ではなく**実行時**に初めてエラーになる。いずれも読み取り専用で、シート・フォームコントロール・名前付き範囲の新規作成/リネームは（AIに一任すべきか判断がまだついていないため）意図的に対象外——見つからなければユーザーに手動作成を促す
 
 ## 3. 書き込み（`excel_update_module_code`）の安全設計
 
@@ -47,6 +47,9 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 - `confirmToken`はdry-run時点のコードに紐付き、書き込み直前に再読込・再計算して照合（楽観的排他制御）。dry-run〜確定の間に別クライアントが同じモジュールを書き換えていた場合は`ERR_MODULE_CHANGED_SINCE_DRYRUN`で拒否（後勝ち上書きを防止。実機で競合再現・正しい拒否を確認済み）
 - 書き込み前に現在のコードを`.excel-vba-sync-backups`へタイムスタンプ付きで自動退避
 - Sheet/ThisWorkbook（Documentモジュール）はショートカットキー等のAttribute情報がVBA API制約上失われる（レスポンスに警告あり）
+
+**ワークブックの自動保存はしない（意図的な設計判断）**
+`excel_update_module_code`の書き込みは、Excelプロセス上のVBAプロジェクトには即座に反映される（VBEで見える・`excel_run_macro`で実行できる）が、`.xlsm`ファイルへの保存は行わない。保存専用のMCPツールも現状存在しない。これは実装漏れではなく方針である：`lintWarnings`は正規表現ベースのヒューリスティックであり本物のVBAパーサーではないため、書き込んだコードに構文エラーが無いことをツール側では保証できない。もし保存まで自動化すると、エラーを含むコードが人間の目に触れないまま`.xlsm`ファイルに定着してしまうリスクがある。現状は「AIが書き込む→人間がExcel上で動作確認する→問題無ければ人間が保存する」という人間のチェックポイントを意図的に残している。AIエージェントは書き込み成功後、**ディスクにはまだ保存されていない**ことをユーザーに伝えること。
 
 **書き込み前の簡易静的解析（`lintWarnings`）**
 `dryRun`レスポンスに含まれる。正規表現ベースの簡易チェック（advisory、書き込みはブロックしない）：

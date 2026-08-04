@@ -165,7 +165,7 @@ code --install-extension "$OUT"
 
 この拡張機能には[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)サーバーが内蔵されており、Claude Code・Claude Desktop・VS Code内蔵のCopilot Chat・Codex等のAIクライアントから、VBAコードの読み取り・検索・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます（上記「[2つの使い方](#two-ways)」の②）。
 
-### 提供される15のツール / 15 available tools
+### 提供される16のツール / 16 available tools
 
 | ツール / Tool | できること / What it does |
 |---|---|
@@ -184,6 +184,7 @@ code --install-extension "$OUT"
 | `excel_update_module_code` | 既存モジュールのコードを書き込み、または`moduleType`指定で新規モジュールを作成（`dryRun`/`confirmToken`の安全フロー付き、他モジュールとの重複プロシージャ名も警告） / Overwrite an existing module's code, or create a new one by passing `moduleType` (with the `dryRun`/`confirmToken` safety flow, plus a cross-module duplicate-procedure-name warning) |
 | `excel_list_worksheets` | 実在するシート一覧を取得（表示名・VBAコード名・表示状態）。VBA Trust Center設定は不要 / List actual worksheets (display name, VBA CodeName, visibility). Does not require the VBA Trust Center setting |
 | `excel_list_form_controls` | UserForm内のコントロール一覧を取得（名前・種類） / List a UserForm's controls (name and type) |
+| `excel_list_defined_names` | 実在する名前付き範囲の一覧を取得（参照先・壊れているかどうか） / List actual defined names (referenced range, whether broken) |
 
 セットアップ手順・安全設計・既知の注意点は **[docs/AI_USAGE.md](docs/AI_USAGE.md)** を参照してください。
 

@@ -297,6 +297,71 @@ try {
   }
 );
 
+// Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å° excel_list_defined_names Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°
+server.tool(
+  "excel_list_defined_names",
+  "List the actual defined names (named ranges) in a workbook -- both workbook-scoped and sheet-scoped, via the Names collection. Use this before generating VBA code that references a named range (e.g. Range('MyNamedRange')), since there is no other way to confirm it actually exists: vba_list_references only reports likely named-range REFERENCES found inside existing VBA code text via regex, not the workbook's actual Names collection. Each entry includes refersTo (the underlying cell/formula reference) and isBroken (true if refersTo contains #REF!, meaning the name points at something that was deleted -- a real, silently-broken name was found in this project's own test workbook during development). If the expected name is not found, do not attempt to create one via VBA code or any other means -- report this to the user so they can define it manually (Formulas > Name Manager). Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Names), not VBProject.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const dotSource = dotSourceExcelUtil();
+
+    const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try {
+  $names = @()
+  foreach ($n in @($wb.Names)) {
+    $scope = 'workbook'
+    $scopeSheet = $null
+    try { if ($n.Parent.Name -ne $wb.Name) { $scope = 'sheet'; $scopeSheet = $n.Parent.Name } } catch {}
+    $refersTo = $null
+    $isBroken = $false
+    try { $refersTo = $n.RefersTo } catch { $isBroken = $true }
+    if ($refersTo -and $refersTo -like '*#REF!*') { $isBroken = $true }
+    $vis = $true
+    try { $vis = [bool]$n.Visible } catch {}
+    $names += [pscustomobject]@{ name=$n.Name; refersTo=$refersTo; scope=$scope; scopeSheet=$scopeSheet; visible=$vis; isBroken=$isBroken }
+  }
+  $res = @{ ok=$true; workbook=$wb.Name; definedNames=$names; count=$names.Count }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 6
+} catch {
+  @{ ok=$false; error='list_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+    try {
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+        { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2 * 1024 * 1024 }
+      );
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
+      return extractFailureResult(e);
+    }
+  }
+);
+
 // Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å° excel_list_form_controls Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°
 server.tool(
   "excel_list_form_controls",
@@ -1682,7 +1747,7 @@ function lintVbaCode(code: string): VbaLintWarning[] {
 
 server.tool(
   "excel_update_module_code",
-  "Overwrite the code of an EXISTING VBA module, or create a brand-new one when moduleType is set (cannot target .frm UserForm modules either way -- overwriting one fails with ERR_UNSUPPORTED_MODULE_TYPE, and UserForms cannot be created via this tool at all). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules. The dry-run response also includes lintWarnings: a best-effort, regex-based static check (not a real VBA parser) for a small set of common issues -- Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing Option Explicit, UsedRange, bare End statements, overly long procedures, missing Set before an object assignment, Declare without PtrSafe, and hardcoded file numbers. These are advisory only and never block the write. The dry-run response also includes duplicateProcedureWarnings: Sub/Function/Property names in newCode that already exist as a Public procedure in some OTHER module of the project -- each entry has a risk of either public_duplicate (newCode's own procedure is also Public: usually means a procedure was meant to move to a new/different module but the original copy was left behind) or private_name_reused (newCode's procedure is Private: no functional/compile collision, since VBA always resolves the same-module Private first, but the name is already meaningful elsewhere in the project and worth renaming for clarity). A same-named Private procedure in the OTHER module is never checked against, since that can never collide with anything outside its own module. Always advisory -- never blocks the write. To create a new module instead of overwriting one, pass moduleType ('standard' or 'class') together with a module name that does not yet exist. The dry-run response then reports mode as 'create', and the confirmToken is bound to (module, moduleType, newCode) rather than to any existing code, since none exists yet. If a module with that name is created by someone else between the dry-run and the confirming call, the write is rejected with ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN instead of colliding with it. No backup is written when creating a new module (there is nothing to back up), and the response's componentType is 1 for a standard module or 2 for a class module.",
+  "Overwrite the code of an EXISTING VBA module, or create a brand-new one when moduleType is set (cannot target .frm UserForm modules either way -- overwriting one fails with ERR_UNSUPPORTED_MODULE_TYPE, and UserForms cannot be created via this tool at all). REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules. The dry-run response also includes lintWarnings: a best-effort, regex-based static check (not a real VBA parser) for a small set of common issues -- Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing Option Explicit, UsedRange, bare End statements, overly long procedures, missing Set before an object assignment, Declare without PtrSafe, and hardcoded file numbers. These are advisory only and never block the write. The dry-run response also includes duplicateProcedureWarnings: Sub/Function/Property names in newCode that already exist as a Public procedure in some OTHER module of the project -- each entry has a risk of either public_duplicate (newCode's own procedure is also Public: usually means a procedure was meant to move to a new/different module but the original copy was left behind) or private_name_reused (newCode's procedure is Private: no functional/compile collision, since VBA always resolves the same-module Private first, but the name is already meaningful elsewhere in the project and worth renaming for clarity). A same-named Private procedure in the OTHER module is never checked against, since that can never collide with anything outside its own module. Always advisory -- never blocks the write. To create a new module instead of overwriting one, pass moduleType ('standard' or 'class') together with a module name that does not yet exist. The dry-run response then reports mode as 'create', and the confirmToken is bound to (module, moduleType, newCode) rather than to any existing code, since none exists yet. If a module with that name is created by someone else between the dry-run and the confirming call, the write is rejected with ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN instead of colliding with it. No backup is written when creating a new module (there is nothing to back up), and the response's componentType is 1 for a standard module or 2 for a class module. IMPORTANT: this tool never saves the workbook to disk -- the write lands in the live Excel process's VBA project (visible immediately in the VBE, runnable via excel_run_macro) but is only persisted to the .xlsm file once the workbook is explicitly saved (there is currently no save tool; this is intentional, not an oversight -- see the note in the write-safety section of docs/AI_USAGE.md for why). Tell the user their change is not yet saved to disk after a successful write.",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
