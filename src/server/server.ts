@@ -365,7 +365,7 @@ try {
 // Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å° excel_list_form_controls Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°Å°
 server.tool(
   "excel_list_form_controls",
-  "List the controls (textboxes, buttons, labels, etc.) inside one or every UserForm in a workbook's VBA project -- name and type only, not layout/position. Use this before generating VBA code that references a form control by name (e.g. UserForm1.TextBox1), since there is no other way to confirm a control actually exists: excel_get_module_code only returns the form's event-handler code, not its designer-time control layout (that lives in the binary .frm/.frx data). If the expected form or control is not found, do not attempt to create one via VBA code or any other means -- report this to the user so they can add it manually via the VBE form designer. Requires the VBA Trust Center setting (same as excel_list_modules).",
+  "List the controls (textboxes, buttons, labels, etc.) inside one or every UserForm in a workbook's VBA project -- name and type only, not layout/position. Use this before generating VBA code that references a form control by name (e.g. UserForm1.TextBox1), since there is no other way to confirm a control actually exists: excel_get_module_code only returns the form's event-handler code, not its designer-time control layout (that lives in the binary .frm/.frx data). If the expected form or control is not found, do not attempt to create one via VBA code or any other means -- report this to the user so they can add it manually via the VBE form designer. type is normalized to the familiar VBA name (Label/ComboBox/OptionButton/Image) for the control types confirmed so far; for any other control type, the raw internal COM interface name is returned instead (e.g. something like IMdcListBox) since late-bound automation cannot see the same friendly name VBA's own TypeName() shows -- treat an unrecognized-looking type string as still probably correct in substance, just not normalized yet. Requires the VBA Trust Center setting (same as excel_list_modules).",
   {
     workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
@@ -415,6 +415,20 @@ try {
     try {
       foreach ($ctrl in @($f.Designer.Controls)) {
         $ctrlType = [Microsoft.VisualBasic.Information]::TypeName($ctrl)
+        # TypeName() on a late-bound MSForms control returns its raw internal COM interface/
+        # coclass name (e.g. "IMdcCombo"), NOT the friendly VBA name ("ComboBox") that VBA's
+        # own TypeName() shows -- confirmed live 2026-08-05. Normalize the handful of control
+        # types actually confirmed against a real form; anything else is left as the raw name
+        # rather than guessed, since the naming pattern is not consistent enough to extrapolate
+        # safely (ILabelControl / IMdcCombo / IMdcOptionButton / ImageClass are three different
+        # naming conventions for four controls).
+        $knownTypeMap = @{
+          'ILabelControl'    = 'Label'
+          'IMdcCombo'        = 'ComboBox'
+          'IMdcOptionButton' = 'OptionButton'
+          'ImageClass'       = 'Image'
+        }
+        if ($knownTypeMap.ContainsKey($ctrlType)) { $ctrlType = $knownTypeMap[$ctrlType] }
         $ctrls += [pscustomobject]@{ name=$ctrl.Name; type=$ctrlType }
       }
     } catch {}
