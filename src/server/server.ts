@@ -533,6 +533,115 @@ try {
     }
   }
 );
+
+// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_formulas ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+server.tool(
+  "excel_list_formulas",
+  "List the actual formulas present in a worksheet's cells (or a bounded range within it) -- e.g. VLOOKUP/INDEX-MATCH/conditional logic that further processes a macro's output into what a human actually sees. This is a common migration blind spot: excel_read_range only returns computed VALUES (Range.Value2), not the underlying formula text, and vba_list_references only detects likely Range(...) references inside VBA CODE text via regex -- neither can tell you a cell actually contains a formula at all. Cells are grouped by their FormulaR1C1 representation (Excel's own position-independent form of a formula, where relative references are expressed relative to the cell rather than as absolute row/column numbers) so that a formula filled down across many rows (e.g. the same VLOOKUP repeated in B2:B10000) collapses into ONE group with a cellCount, instead of returning thousands of near-duplicate entries -- read cellCount as 'this many cells share this exact relative pattern', not as thousands of independent formulas to review one by one. Each group's exampleFormula is in ordinary A1 style (e.g. '=VLOOKUP(A2,Sheet2!A:B,2,FALSE)') for readability; addresses lists up to 20 of the matching cells (addressesTruncated:true if there are more). A sheet or range with no formulas at all returns an empty formulaGroups array, not an error. Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Worksheet/Range), not VBProject.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    sheet: z.string().describe("Worksheet name to scan for formulas."),
+    range: z.string().optional().describe("Cell range address, e.g. 'A1:D100'. Omit to scan the sheet's entire UsedRange -- prefer a bounded range on very large sheets for speed."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const sheet = psq(params.sheet);
+    const range = psq(params.range ?? "");
+    const dotSource = dotSourceExcelUtil();
+
+    const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { $ws = $wb.Worksheets.Item('${sheet}') }
+catch { @{ ok=$false; error='sheet_not_found'; sheet='${sheet}' } | ConvertTo-Json ; exit }
+
+$targetRangeAddr = '${range}'
+try {
+  if ($targetRangeAddr) { $scanRange = $ws.Range($targetRangeAddr) } else { $scanRange = $ws.UsedRange }
+} catch {
+  @{ ok=$false; error='invalid_range'; range=$targetRangeAddr } | ConvertTo-Json ; exit
+}
+
+try {
+  $formulaCells = $null
+  try { $formulaCells = $scanRange.SpecialCells(-4123) } catch { $formulaCells = $null }
+
+  $groups = [ordered]@{}
+  $totalCells = 0
+  if ($formulaCells) {
+    foreach ($cell in $formulaCells) {
+      $totalCells++
+      $key = $cell.FormulaR1C1
+      if (-not $groups.Contains($key)) {
+        $groups[$key] = [pscustomobject]@{
+          formulaR1C1 = $key
+          exampleFormula = $cell.Formula
+          exampleAddress = $cell.Address($false, $false)
+          addresses = New-Object System.Collections.ArrayList
+          cellCount = 0
+        }
+      }
+      $groups[$key].cellCount++
+      if ($groups[$key].addresses.Count -lt 20) {
+        [void]$groups[$key].addresses.Add($cell.Address($false, $false))
+      }
+    }
+  }
+
+  $formulaGroups = @()
+  $groupCount = 0
+  $truncated = $false
+  foreach ($key in $groups.Keys) {
+    $groupCount++
+    if ($groupCount -gt 500) { $truncated = $true; break }
+    $g = $groups[$key]
+    $formulaGroups += [pscustomobject]@{
+      formulaR1C1 = $g.formulaR1C1
+      exampleFormula = $g.exampleFormula
+      exampleAddress = $g.exampleAddress
+      addresses = @($g.addresses)
+      addressesTruncated = ($g.cellCount -gt 20)
+      cellCount = $g.cellCount
+    }
+  }
+
+  $res = @{ ok=$true; workbook=$wb.Name; sheet=$ws.Name; formulaGroups=$formulaGroups; totalFormulaCells=$totalCells; groupCount=$formulaGroups.Count; truncated=$truncated }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 8
+} catch {
+  @{ ok=$false; error='list_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+    try {
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+        { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 4 * 1024 * 1024 }
+      );
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
+      return extractFailureResult(e);
+    }
+  }
+);
+
 server.tool(
   "excel_list_macros",
   "List runnable procedures (Subs; module-level Public or implicitly-public -- Private/Friend are excluded, and Functions are not listed) in one VBA module, or in every module of the workbook at once if moduleName is omitted -- prefer omitting moduleName over calling this once per module when you need the whole workbook's macros, since each call re-resolves Excel/the workbook. Each result includes a fully-qualified name usable directly as the 'qualified' argument to excel_run_macro. Scans all currently open workbooks for a matching module unless workbookPath narrows it to one specific file (auto-launching/opening it if needed).",

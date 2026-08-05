@@ -165,7 +165,7 @@ code --install-extension "$OUT"
 
 この拡張機能には[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)サーバーが内蔵されており、Claude Code・Claude Desktop・VS Code内蔵のCopilot Chat・Codex等のAIクライアントから、VBAコードの読み取り・検索・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます（上記「[2つの使い方](#two-ways)」の②）。
 
-### 提供される16のツール / 16 available tools
+### 提供される17のツール / 17 available tools
 
 | ツール / Tool | できること / What it does |
 |---|---|
@@ -185,6 +185,7 @@ code --install-extension "$OUT"
 | `excel_list_worksheets` | 実在するシート一覧を取得（表示名・VBAコード名・表示状態）。VBA Trust Center設定は不要 / List actual worksheets (display name, VBA CodeName, visibility). Does not require the VBA Trust Center setting |
 | `excel_list_form_controls` | UserForm内のコントロール一覧を取得（名前・種類） / List a UserForm's controls (name and type) |
 | `excel_list_defined_names` | 実在する名前付き範囲の一覧を取得（参照先・壊れているかどうか） / List actual defined names (referenced range, whether broken) |
+| `excel_list_formulas` | シート上の数式を取得（同一パターンはグルーピング） / List formulas actually present in a sheet's cells (grouped by pattern) |
 
 セットアップ手順・安全設計・既知の注意点は **[docs/AI_USAGE.md](docs/AI_USAGE.md)** を参照してください。
 
