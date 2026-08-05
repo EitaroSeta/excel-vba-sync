@@ -16,7 +16,7 @@
    - Claude Code: プロジェクトルートの`.mcp.json`
    - Claude Desktop: `claude_desktop_config.json`
    - 既存の設定がある場合はファイル全体を上書きせず、`mcpServers`オブジェクトに`excel-vba-sync`のエントリだけを追記する
-3. AIクライアントを再起動 → 17ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `vba_list_references` / `vba_list_variable_scopes` / `excel_update_module_code` / `excel_read_range` / `excel_list_worksheets` / `excel_list_form_controls` / `excel_list_defined_names` / `excel_list_formulas`）が使用可能に
+3. AIクライアントを再起動 → 19ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `vba_list_references` / `vba_list_variable_scopes` / `excel_update_module_code` / `excel_read_range` / `excel_list_worksheets` / `excel_list_form_controls` / `excel_list_defined_names` / `excel_list_formulas` / `excel_list_conditional_formats` / `excel_list_data_validations`）が使用可能に
 
 ### 1.2 VS Code内蔵・VS Code拡張機能型のAIクライアント（Copilot Chat / Codex 等）
 
@@ -39,7 +39,7 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 - **モジュール一覧だけ欲しい場合** → `excel_list_modules`を使う。`vba_search_code`に`.*`のような全行マッチ正規表現を投げない（コード内容を読まないぶん軽量・高速。力技の全文検索で巨大な結果を返しエラーになった実例あり）
 - **ワークブック全体のマクロ一覧が欲しい場合** → `excel_list_macros`の`moduleName`を省略する。1回の呼び出しで全モジュール分を返す。モジュールごとに1回ずつ呼ぶループは避ける（Excel解決処理がモジュール数だけ繰り返され、応答が返ってこないように見えた実例あり）
 - **AIが生成したVBAコードでシート名・フォームコントロール名・名前付き範囲を参照する前** → `excel_list_worksheets`（実在するシート名・コード名・表示状態）／`excel_list_form_controls`（UserFormのコントロール名・種類）／`excel_list_defined_names`（名前付き範囲・`refersTo`・壊れているかどうか）で実在確認する。存在しない名前を無条件に信じてコードを書くと、書き込み時ではなく**実行時**に初めてエラーになる。いずれも読み取り専用で、シート・フォームコントロール・名前付き範囲の新規作成/リネームは（AIに一任すべきか判断がまだついていないため）意図的に対象外——見つからなければユーザーに手動作成を促す
-- **マイグレーション調査でVBAコードだけ見て満足しない** → マクロが出力した値を、さらにセル上の数式（VLOOKUP等）や条件付き書式が加工して人間向けの情報にしているケースがある。`excel_read_range`は計算結果の値しか返さないため、数式そのものを見るには`excel_list_formulas`を使う。フィルダウンされた同一パターンの数式は`FormulaR1C1`で自動的に1グループへ集約されるため、`cellCount`が大きくても「同じ数式が多数のセルに適用されている」と解釈すればよい（条件付き書式の一覧化は現状未対応）
+- **マイグレーション調査でVBAコードだけ見て満足しない** → マクロが出力した値を、さらにセル上の数式（VLOOKUP等）・条件付き書式・入力規則が加工/制約して人間向けの情報にしているケースがある。`excel_read_range`は計算結果の値しか返さないため、数式そのものを見るには`excel_list_formulas`、色分け等のルールは`excel_list_conditional_formats`、ドロップダウンの選択肢等の入力制約は`excel_list_data_validations`（`type: "List"`のときの`exampleFormula1`が実際の選択肢）を使う。いずれもフィルダウンされた同一パターンのルールは自動的に1グループへ集約されるため、`cellCount`が大きくても「同じルールが多数のセルに適用されている」と解釈すればよい。`type`/`operator`は判明している値のみ名前に変換され、未知の値は生の数値のまま返る（それでも正しいデータ）
 
 ## 3. 書き込み（`excel_update_module_code`）の安全設計
 

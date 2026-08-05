@@ -642,6 +642,298 @@ try {
   }
 );
 
+// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_conditional_formats ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+server.tool(
+  "excel_list_conditional_formats",
+  "List conditional formatting rules actually present in a worksheet's cells (or a bounded range within it) -- another common migration blind spot alongside excel_list_formulas: a cell's displayed color/style can depend on rule logic (e.g. 'red if negative') that never appears anywhere in VBA code or in the cell's own formula. Cells are grouped by (type, operator, and the rule's Formula1/Formula2 normalized to a position-independent form via Application.ConvertFormula, mirroring how excel_list_formulas uses Range.FormulaR1C1) so a rule applied down many rows collapses into one group with a cellCount, instead of one entry per cell. type/operator are normalized to readable names for the values confirmed so far (CellValue/Expression/ColorScale/DataBar/Top10/IconSet/UniqueValues/TextString/Blanks/TimePeriod/AboveAverage/NoBlanks/Errors/NoErrors for type; Between/NotBetween/Equal/NotEqual/Greater/Less/GreaterEqual/LessEqual for operator) -- an unrecognized type/operator is returned as its raw numeric value rather than guessed, and is still correct data, just not named yet. A sheet or range with no conditional formatting returns an empty formatGroups array, not an error. Does NOT require the VBA Trust Center setting: this only touches the normal Excel object model (Worksheet/Range/FormatConditions), not VBProject.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    sheet: z.string().describe("Worksheet name to scan for conditional formatting rules."),
+    range: z.string().optional().describe("Cell range address, e.g. 'A1:D100'. Omit to scan the sheet's entire UsedRange -- prefer a bounded range on very large sheets for speed."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const sheet = psq(params.sheet);
+    const range = psq(params.range ?? "");
+    const dotSource = dotSourceExcelUtil();
+
+    const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+function Convert-ToR1C1 {
+  param($App, $Formula, $Cell)
+  if (-not $Formula) { return $null }
+  try { return $App.ConvertFormula($Formula, 1, -4150, 4, $Cell) } catch { return $Formula }
+}
+
+$typeMap = @{
+  1='CellValue'; 2='Expression'; 3='ColorScale'; 4='DataBar'; 5='Top10'; 6='IconSet';
+  8='UniqueValues'; 9='TextString'; 10='Blanks'; 11='TimePeriod'; 12='AboveAverage';
+  13='NoBlanks'; 16='Errors'; 17='NoErrors'
+}
+$opMap = @{ 1='Between'; 2='NotBetween'; 3='Equal'; 4='NotEqual'; 5='Greater'; 6='Less'; 7='GreaterEqual'; 8='LessEqual' }
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { $ws = $wb.Worksheets.Item('${sheet}') }
+catch { @{ ok=$false; error='sheet_not_found'; sheet='${sheet}' } | ConvertTo-Json ; exit }
+
+$targetRangeAddr = '${range}'
+try {
+  if ($targetRangeAddr) { $scanRange = $ws.Range($targetRangeAddr) } else { $scanRange = $ws.UsedRange }
+} catch {
+  @{ ok=$false; error='invalid_range'; range=$targetRangeAddr } | ConvertTo-Json ; exit
+}
+
+try {
+  $fcCells = $null
+  try { $fcCells = $scanRange.SpecialCells(-4172) } catch { $fcCells = $null }
+
+  $groups = [ordered]@{}
+  $totalCells = 0
+  if ($fcCells) {
+    foreach ($cell in $fcCells) {
+      foreach ($cond in $cell.FormatConditions) {
+        $totalCells++
+        $typeNum = $cond.Type
+        $typeName = if ($typeMap.Contains($typeNum)) { $typeMap[$typeNum] } else { $typeNum }
+        $opNum = $null
+        try { $opNum = $cond.Operator } catch {}
+        $opName = if ($opNum -and $opMap.Contains($opNum)) { $opMap[$opNum] } elseif ($opNum) { $opNum } else { $null }
+        $f1 = $null; $f2 = $null
+        try { $f1 = $cond.Formula1 } catch {}
+        try { $f2 = $cond.Formula2 } catch {}
+        $f1Key = Convert-ToR1C1 -App $excel -Formula $f1 -Cell $cell
+        $f2Key = Convert-ToR1C1 -App $excel -Formula $f2 -Cell $cell
+        $priority = $null
+        try { $priority = $cond.Priority } catch {}
+        $stopIfTrue = $null
+        try { $stopIfTrue = [bool]$cond.StopIfTrue } catch {}
+
+        $key = "$typeName|$opName|$f1Key|$f2Key"
+        if (-not $groups.Contains($key)) {
+          $groups[$key] = [pscustomobject]@{
+            type = $typeName
+            operator = $opName
+            exampleFormula1 = $f1
+            exampleFormula2 = $f2
+            priority = $priority
+            stopIfTrue = $stopIfTrue
+            exampleAddress = $cell.Address($false, $false)
+            addresses = New-Object System.Collections.ArrayList
+            cellCount = 0
+          }
+        }
+        $groups[$key].cellCount++
+        if ($groups[$key].addresses.Count -lt 20) {
+          [void]$groups[$key].addresses.Add($cell.Address($false, $false))
+        }
+      }
+    }
+  }
+
+  $formatGroups = @()
+  $groupCount = 0
+  $truncated = $false
+  foreach ($key in $groups.Keys) {
+    $groupCount++
+    if ($groupCount -gt 500) { $truncated = $true; break }
+    $g = $groups[$key]
+    $formatGroups += [pscustomobject]@{
+      type = $g.type
+      operator = $g.operator
+      exampleFormula1 = $g.exampleFormula1
+      exampleFormula2 = $g.exampleFormula2
+      priority = $g.priority
+      stopIfTrue = $g.stopIfTrue
+      exampleAddress = $g.exampleAddress
+      addresses = @($g.addresses)
+      addressesTruncated = ($g.cellCount -gt 20)
+      cellCount = $g.cellCount
+    }
+  }
+
+  $res = @{ ok=$true; workbook=$wb.Name; sheet=$ws.Name; formatGroups=$formatGroups; totalCells=$totalCells; groupCount=$formatGroups.Count; truncated=$truncated }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 8
+} catch {
+  @{ ok=$false; error='list_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+    try {
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+        { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 4 * 1024 * 1024 }
+      );
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
+      return extractFailureResult(e);
+    }
+  }
+);
+
+// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_data_validations ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+server.tool(
+  "excel_list_data_validations",
+  "List data validation rules actually present in a worksheet's cells (or a bounded range within it) -- the same kind of migration blind spot as excel_list_formulas/excel_list_conditional_formats, but for input constraints: a cell that only accepts values from a dropdown list, a whole-number range, a date range, etc. never shows that constraint in VBA code or in the cell's own formula. For type 'List', exampleFormula1 IS the dropdown's source -- either a literal comma-separated string (e.g. 'Yes,No,Maybe') or a range reference (e.g. '=$D$1:$D$5') -- this is exactly how to discover a dropdown's actual choices. Cells are grouped the same way as excel_list_conditional_formats (by type, operator, and Formula1/Formula2 normalized via Application.ConvertFormula to a position-independent form), so the same rule applied down many rows collapses into one group with a cellCount. type/operator are normalized to readable names for the values confirmed so far (InputOnly/WholeNumber/Decimal/List/Date/Time/TextLength/Custom for type; Between/NotBetween/Equal/NotEqual/Greater/Less/GreaterEqual/LessEqual for operator) -- an unrecognized value is returned as its raw number rather than guessed, and is still correct data, just not named yet. A sheet or range with no data validation returns an empty validationGroups array, not an error. Does NOT require the VBA Trust Center setting: this only touches the normal Excel object model (Worksheet/Range/Validation), not VBProject.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
+    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    sheet: z.string().describe("Worksheet name to scan for data validation rules."),
+    range: z.string().optional().describe("Cell range address, e.g. 'A1:D100'. Omit to scan the sheet's entire UsedRange -- prefer a bounded range on very large sheets for speed."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const sheet = psq(params.sheet);
+    const range = psq(params.range ?? "");
+    const dotSource = dotSourceExcelUtil();
+
+    const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+function Convert-ToR1C1 {
+  param($App, $Formula, $Cell)
+  if (-not $Formula) { return $null }
+  try { return $App.ConvertFormula($Formula, 1, -4150, 4, $Cell) } catch { return $Formula }
+}
+
+$typeMap = @{ 0='InputOnly'; 1='WholeNumber'; 2='Decimal'; 3='List'; 4='Date'; 5='Time'; 6='TextLength'; 7='Custom' }
+$opMap = @{ 1='Between'; 2='NotBetween'; 3='Equal'; 4='NotEqual'; 5='Greater'; 6='Less'; 7='GreaterEqual'; 8='LessEqual' }
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+try { $ws = $wb.Worksheets.Item('${sheet}') }
+catch { @{ ok=$false; error='sheet_not_found'; sheet='${sheet}' } | ConvertTo-Json ; exit }
+
+$targetRangeAddr = '${range}'
+try {
+  if ($targetRangeAddr) { $scanRange = $ws.Range($targetRangeAddr) } else { $scanRange = $ws.UsedRange }
+} catch {
+  @{ ok=$false; error='invalid_range'; range=$targetRangeAddr } | ConvertTo-Json ; exit
+}
+
+try {
+  $valCells = $null
+  try { $valCells = $scanRange.SpecialCells(-4174) } catch { $valCells = $null }
+
+  $groups = [ordered]@{}
+  $totalCells = 0
+  if ($valCells) {
+    foreach ($cell in $valCells) {
+      $totalCells++
+      $val = $cell.Validation
+      $typeNum = $null
+      try { $typeNum = $val.Type } catch {}
+      $typeName = if ($null -ne $typeNum -and $typeMap.Contains($typeNum)) { $typeMap[$typeNum] } else { $typeNum }
+      $opNum = $null
+      try { $opNum = $val.Operator } catch {}
+      $opName = if ($opNum -and $opMap.Contains($opNum)) { $opMap[$opNum] } elseif ($opNum) { $opNum } else { $null }
+      $f1 = $null; $f2 = $null
+      try { $f1 = $val.Formula1 } catch {}
+      try { $f2 = $val.Formula2 } catch {}
+      $f1Key = Convert-ToR1C1 -App $excel -Formula $f1 -Cell $cell
+      $f2Key = Convert-ToR1C1 -App $excel -Formula $f2 -Cell $cell
+      $inCellDropdown = $null
+      try { $inCellDropdown = [bool]$val.InCellDropdown } catch {}
+      $inputMessage = $null
+      try { $inputMessage = $val.InputMessage } catch {}
+      $errorMessage = $null
+      try { $errorMessage = $val.ErrorMessage } catch {}
+
+      $key = "$typeName|$opName|$f1Key|$f2Key"
+      if (-not $groups.Contains($key)) {
+        $groups[$key] = [pscustomobject]@{
+          type = $typeName
+          operator = $opName
+          exampleFormula1 = $f1
+          exampleFormula2 = $f2
+          inCellDropdown = $inCellDropdown
+          inputMessage = $inputMessage
+          errorMessage = $errorMessage
+          exampleAddress = $cell.Address($false, $false)
+          addresses = New-Object System.Collections.ArrayList
+          cellCount = 0
+        }
+      }
+      $groups[$key].cellCount++
+      if ($groups[$key].addresses.Count -lt 20) {
+        [void]$groups[$key].addresses.Add($cell.Address($false, $false))
+      }
+    }
+  }
+
+  $validationGroups = @()
+  $groupCount = 0
+  $truncated = $false
+  foreach ($key in $groups.Keys) {
+    $groupCount++
+    if ($groupCount -gt 500) { $truncated = $true; break }
+    $g = $groups[$key]
+    $validationGroups += [pscustomobject]@{
+      type = $g.type
+      operator = $g.operator
+      exampleFormula1 = $g.exampleFormula1
+      exampleFormula2 = $g.exampleFormula2
+      inCellDropdown = $g.inCellDropdown
+      inputMessage = $g.inputMessage
+      errorMessage = $g.errorMessage
+      exampleAddress = $g.exampleAddress
+      addresses = @($g.addresses)
+      addressesTruncated = ($g.cellCount -gt 20)
+      cellCount = $g.cellCount
+    }
+  }
+
+  $res = @{ ok=$true; workbook=$wb.Name; sheet=$ws.Name; validationGroups=$validationGroups; totalCells=$totalCells; groupCount=$validationGroups.Count; truncated=$truncated }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 8
+} catch {
+  @{ ok=$false; error='list_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+    try {
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+        { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 4 * 1024 * 1024 }
+      );
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
+      return extractFailureResult(e);
+    }
+  }
+);
+
 server.tool(
   "excel_list_macros",
   "List runnable procedures (Subs; module-level Public or implicitly-public -- Private/Friend are excluded, and Functions are not listed) in one VBA module, or in every module of the workbook at once if moduleName is omitted -- prefer omitting moduleName over calling this once per module when you need the whole workbook's macros, since each call re-resolves Excel/the workbook. Each result includes a fully-qualified name usable directly as the 'qualified' argument to excel_run_macro. Scans all currently open workbooks for a matching module unless workbookPath narrows it to one specific file (auto-launching/opening it if needed).",
