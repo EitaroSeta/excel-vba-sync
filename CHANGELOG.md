@@ -11,6 +11,14 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.76] - 2026-08-09
+### ### Changed
+- Trimmed every tool description and parameter schema. The `tools/list` payload an AI client receives on connect went from **41,718 to 28,527 characters (roughly 10,430 to 7,130 tokens, a 32% cut)** with no change to behaviour -- measured by querying the running server, not estimated. That payload is re-sent every conversation, so it is a recurring cost paid by every user of every client.
+- Measuring first showed the assumption "19 tools is too many" was wrong: tool *count* was never the problem, description *length* was. Average cost was ~550 tokens per tool where 100-200 is typical, and the single largest (`excel_update_module_code`) accounted for 14% of the total on its own. Consolidating tools was considered and rejected -- the eight `excel_list_*` tools take genuinely different parameters and return different shapes, so folding them into one discriminated tool would make each variant harder for an agent to call correctly, not easier.
+- What was cut: rationale for past design decisions, enumerations of things the response already contains (e.g. all nine `lintWarnings` rule categories), restatements of error text that arrives anyway, and cross-references to this project's own history. What was deliberately kept: how to call the tool, and anything surprising enough to cause a mistake -- the required dryRun/confirm flow, that UserForms cannot be created, that names must be verified before being referenced because a mismatch only fails at runtime, and that nothing is ever saved to disk.
+- Also fixed real duplication: the `workbook`/`workbookPath` parameter descriptions were repeated verbatim across 14 and 17 tools respectively, and are now stated once, concisely, in each.
+- Verified after the change: full build, all 48 unit tests, and a live call to every one of the 19 tools against the real test workbook -- read-only tools, the write path's dry-run, and an error path. All behave exactly as before.
+
 ## [0.0.75] - 2026-08-09
 ### ### Added
 - `excel_update_module_code` can now overwrite **UserForm (.frm) modules**, which it previously refused outright with `ERR_UNSUPPORTED_MODULE_TYPE`. Only the form's code-behind is replaced, via the same `CodeModule.DeleteLines` + `AddFromString` path already used for Sheet/ThisWorkbook Document modules; the Designer side -- the controls, their positions/sizes, and the paired `.frx` binary -- is never touched. Motivated by working through a concrete requirement (enter an ID on a form, pull matching rows from an inventory sheet, edit them, write them back on a button click): the form's *layout* still has to be built by a human, but with this the *logic* can be written end-to-end by an agent, which was the actual blocker.

@@ -103,7 +103,9 @@ function extractFailureResult(e: any): { content: { type: "text"; text: string }
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_get_module_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_get_module_code",
-  "Read the full source code of a VBA module (all Sub/Function bodies as VBE would show them; module- and procedure-level Attribute lines, e.g. macro shortcut key bindings, are NOT included -- this reads via CodeModule.Lines()). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off (cannot be enabled programmatically). Values that look like a hardcoded password/API key/Authorization header are automatically masked as [REDACTED] before this is returned -- always on, no way to disable it, and best-effort only (a secret with no recognizable keyword nearby will not be caught).",
+  "Read a VBA module's full source, as the VBE shows it. Attribute lines (module- and procedure-level, e.g. macro shortcut key bindings) are NOT included -- this reads via CodeModule.Lines(). " +
+  "Values resembling a hardcoded password/API key/Authorization header are masked as [REDACTED] -- always on, best-effort. " +
+  "Pass workbookPath (full path) unless the workbook is already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' is off (it cannot be enabled programmatically).",
   {
     workbook: z.string().describe("Workbook display name, e.g. 'Book1.xlsm'. Must match an already-open workbook unless workbookPath is also given."),
     module: z.string().describe("VBA module name (e.g. 'Module1', 'Sheet1', 'ThisWorkbook')."),
@@ -168,10 +170,11 @@ try {
 
 server.tool(
   "excel_list_modules",
-  "List the VBA modules in a workbook (name, component type, and line count) without scanning any code content -- cheap and fast compared to vba_search_code. Use this instead of vba_search_code when you just need to know what modules exist, before deciding what to read/search/run. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open.",
+  "List a workbook's VBA modules (name, component type, line count) without reading any code -- cheap and fast. " +
+  "Use this, not vba_search_code, when you only need to know what modules exist before deciding what to read, search or run.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
   },
   async (params) => {
     if (!params.workbook && !params.workbookPath) {
@@ -235,10 +238,14 @@ try {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_worksheets ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_list_worksheets",
-  "List the actual worksheets in a workbook (display name, VBA CodeName, index, visibility) -- NOT the VBA code modules (use excel_list_modules for those). A worksheet has two distinct names: its display name (what Worksheets('...') string lookups use, renamable by the user) and its CodeName (what direct Sheet1.Range(...) references use, fixed at creation, and what shows up as the module name for componentType 100 entries in excel_list_modules). Use this before generating VBA code that references a sheet by name, to confirm the exact spelling exists -- a mismatch fails at RUNTIME, not at write time, and there is no other way to detect that in advance. If the expected sheet is not found, do not attempt to create or rename one via VBA code or any other means -- report this to the user so they can create/rename it manually in Excel. Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Worksheets), not VBProject.",
+  "List a workbook's actual worksheets (display name, VBA CodeName, index, visibility) -- not the code modules; use excel_list_modules for those. " +
+  "A sheet has two names: the display name (used by Worksheets('...'), renamable) and the CodeName (used by direct Sheet1.Range(...) references, fixed at creation, and what excel_list_modules shows for componentType 100 entries). " +
+  "Call this before writing code that names a sheet: a mismatch fails at RUNTIME, not at write time, and nothing else catches it in advance. " +
+  "If a sheet is missing, do not try to create or rename one -- ask the user to do it in Excel. " +
+  "Does NOT require the VBA Trust Center setting.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
   },
   async (params) => {
     if (!params.workbook && !params.workbookPath) {
@@ -297,10 +304,14 @@ try {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_defined_names ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_list_defined_names",
-  "List the actual defined names (named ranges) in a workbook -- both workbook-scoped and sheet-scoped, via the Names collection. Use this before generating VBA code that references a named range (e.g. Range('MyNamedRange')), since there is no other way to confirm it actually exists: vba_list_references only reports likely named-range REFERENCES found inside existing VBA code text via regex, not the workbook's actual Names collection. Each entry includes refersTo (the underlying cell/formula reference) and isBroken (true if refersTo contains #REF!, meaning the name points at something that was deleted -- a real, silently-broken name was found in this project's own test workbook during development). If the expected name is not found, do not attempt to create one via VBA code or any other means -- report this to the user so they can define it manually (Formulas > Name Manager). Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Names), not VBProject.",
+  "List a workbook's actual defined names (named ranges), both workbook- and sheet-scoped. " +
+  "Call this before writing code that references one (e.g. Range('MyNamedRange')): vba_list_references only reports likely references found in VBA code text, never the workbook's real Names collection. " +
+  "Each entry has refersTo and isBroken (true when refersTo contains #REF!, i.e. the name points at something deleted -- these fail silently otherwise). " +
+  "If a name is missing, do not try to create it -- ask the user to define it (Formulas > Name Manager). " +
+  "Does NOT require the VBA Trust Center setting.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
   },
   async (params) => {
     if (!params.workbook && !params.workbookPath) {
@@ -362,10 +373,14 @@ try {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_form_controls ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_list_form_controls",
-  "List the controls (textboxes, buttons, labels, etc.) inside one or every UserForm in a workbook's VBA project -- name and type only, not layout/position. Use this before generating VBA code that references a form control by name (e.g. UserForm1.TextBox1), since there is no other way to confirm a control actually exists: excel_get_module_code only returns the form's event-handler code, not its designer-time control layout (that lives in the binary .frm/.frx data). If the expected form or control is not found, do not attempt to create one via VBA code or any other means -- report this to the user so they can add it manually via the VBE form designer. type is normalized to the familiar VBA name (Label/ComboBox/OptionButton/Image) for the control types confirmed so far; for any other control type, the raw internal COM interface name is returned instead (e.g. something like IMdcListBox) since late-bound automation cannot see the same friendly name VBA's own TypeName() shows -- treat an unrecognized-looking type string as still probably correct in substance, just not normalized yet. Requires the VBA Trust Center setting (same as excel_list_modules).",
+  "List the controls inside one or every UserForm -- name and type only, not layout or position. " +
+  "Call this before writing code that references a control (e.g. UserForm1.TextBox1): nothing else can confirm a control exists, since excel_get_module_code returns only the form's code-behind, not its designer layout (that lives in the binary .frx). " +
+  "If the form or control is missing, do not try to create it -- ask the user to add it in the VBE form designer. " +
+  "type is given the familiar VBA name where known; anything else comes back as its raw COM interface name (e.g. IMdcListBox), which is still correct in substance, just not normalized yet. " +
+  "Requires the VBA Trust Center setting.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
     formName: z.string().optional().describe("Name of one UserForm to inspect. Omit to list controls for every UserForm in the project in a single call."),
   },
   async (params) => {
@@ -460,10 +475,12 @@ try {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_macros ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_read_range",
-  "Read cell values from a range in an Excel worksheet -- e.g. to verify what excel_run_macro actually did to the spreadsheet, since that tool alone cannot confirm the macro's effect. Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Range/Worksheet), not VBProject. Returns a row-major 2D array of values using Range.Value2 (avoids the Date/Currency wrapping that Range.Value can introduce). Large ranges (e.g. whole columns/rows) can be slow -- prefer a bounded address like 'A1:C10'. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open.",
+  "Read cell values from a worksheet range -- e.g. to verify what excel_run_macro actually did, since that tool cannot confirm its own effect. " +
+  "Returns a row-major 2D array via Range.Value2 (avoiding the Date/Currency wrapping Range.Value introduces). Values only, never the formulas behind them -- use excel_list_formulas for those. " +
+  "Whole columns/rows can be slow; prefer a bounded address like 'A1:C10'. Does NOT require the VBA Trust Center setting.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
     sheet: z.string().describe("Worksheet name to read from."),
     range: z.string().describe("Cell range address, e.g. 'A1', 'A1:C10', or a defined name."),
   },
@@ -538,10 +555,12 @@ try {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_formulas ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_list_formulas",
-  "List the actual formulas present in a worksheet's cells (or a bounded range within it) -- e.g. VLOOKUP/INDEX-MATCH/conditional logic that further processes a macro's output into what a human actually sees. This is a common migration blind spot: excel_read_range only returns computed VALUES (Range.Value2), not the underlying formula text, and vba_list_references only detects likely Range(...) references inside VBA CODE text via regex -- neither can tell you a cell actually contains a formula at all. Cells are grouped by their FormulaR1C1 representation (Excel's own position-independent form of a formula, where relative references are expressed relative to the cell rather than as absolute row/column numbers) so that a formula filled down across many rows (e.g. the same VLOOKUP repeated in B2:B10000) collapses into ONE group with a cellCount, instead of returning thousands of near-duplicate entries -- read cellCount as 'this many cells share this exact relative pattern', not as thousands of independent formulas to review one by one. Each group's exampleFormula is in ordinary A1 style (e.g. '=VLOOKUP(A2,Sheet2!A:B,2,FALSE)') for readability; addresses lists up to 20 of the matching cells (addressesTruncated:true if there are more). A sheet or range with no formulas at all returns an empty formulaGroups array, not an error. Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Worksheet/Range), not VBProject.",
+  "List the formulas actually present in a worksheet's cells -- VLOOKUP/INDEX-MATCH and similar logic that turns a macro's output into what the user actually sees. A common migration blind spot: excel_read_range returns computed VALUES only, and vba_list_references scans VBA code text only, so neither reveals that a cell holds a formula at all. " +
+  "Cells are grouped by FormulaR1C1 (Excel's position-independent form), so a formula filled down thousands of rows collapses into ONE group -- read cellCount as 'this many cells share this pattern', not as that many formulas to review. exampleFormula is ordinary A1 style; addresses lists up to 20 cells (addressesTruncated:true beyond that). " +
+  "No formulas returns an empty formulaGroups array, not an error. Does NOT require the VBA Trust Center setting -- this touches only Worksheet/Range, not VBProject.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
     sheet: z.string().describe("Worksheet name to scan for formulas."),
     range: z.string().optional().describe("Cell range address, e.g. 'A1:D100'. Omit to scan the sheet's entire UsedRange -- prefer a bounded range on very large sheets for speed."),
   },
@@ -646,10 +665,13 @@ try {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_conditional_formats ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_list_conditional_formats",
-  "List conditional formatting rules actually present in a worksheet's cells (or a bounded range within it) -- another common migration blind spot alongside excel_list_formulas: a cell's displayed color/style can depend on rule logic (e.g. 'red if negative') that never appears anywhere in VBA code or in the cell's own formula. Cells are grouped by (type, operator, and the rule's Formula1/Formula2 normalized to a position-independent form via Application.ConvertFormula, mirroring how excel_list_formulas uses Range.FormulaR1C1) so a rule applied down many rows collapses into one group with a cellCount, instead of one entry per cell. type/operator are normalized to readable names for the values confirmed so far (CellValue/Expression/ColorScale/DataBar/Top10/IconSet/UniqueValues/TextString/Blanks/TimePeriod/AboveAverage/NoBlanks/Errors/NoErrors for type; Between/NotBetween/Equal/NotEqual/Greater/Less/GreaterEqual/LessEqual for operator) -- an unrecognized type/operator is returned as its raw numeric value rather than guessed, and is still correct data, just not named yet. A sheet or range with no conditional formatting returns an empty formatGroups array, not an error. Does NOT require the VBA Trust Center setting: this only touches the normal Excel object model (Worksheet/Range/FormatConditions), not VBProject.",
+  "List conditional formatting rules in a worksheet's cells -- a cell's color or style can depend on rule logic ('red if negative') that appears nowhere in VBA code or in the cell's formula. " +
+  "Cells are grouped by type, operator and position-normalized Formula1/Formula2, so one rule applied down many rows is a single group with a cellCount rather than one entry per cell. " +
+  "type/operator get readable names where known; an unrecognized value comes back as its raw number rather than a guess -- still correct, just unnamed. " +
+  "No rules returns an empty formatGroups array, not an error. Does NOT require the VBA Trust Center setting.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
     sheet: z.string().describe("Worksheet name to scan for conditional formatting rules."),
     range: z.string().optional().describe("Cell range address, e.g. 'A1:D100'. Omit to scan the sheet's entire UsedRange -- prefer a bounded range on very large sheets for speed."),
   },
@@ -792,10 +814,14 @@ try {
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_data_validations ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_list_data_validations",
-  "List data validation rules actually present in a worksheet's cells (or a bounded range within it) -- the same kind of migration blind spot as excel_list_formulas/excel_list_conditional_formats, but for input constraints: a cell that only accepts values from a dropdown list, a whole-number range, a date range, etc. never shows that constraint in VBA code or in the cell's own formula. For type 'List', exampleFormula1 IS the dropdown's source -- either a literal comma-separated string (e.g. 'Yes,No,Maybe') or a range reference (e.g. '=$D$1:$D$5') -- this is exactly how to discover a dropdown's actual choices. Cells are grouped the same way as excel_list_conditional_formats (by type, operator, and Formula1/Formula2 normalized via Application.ConvertFormula to a position-independent form), so the same rule applied down many rows collapses into one group with a cellCount. type/operator are normalized to readable names for the values confirmed so far (InputOnly/WholeNumber/Decimal/List/Date/Time/TextLength/Custom for type; Between/NotBetween/Equal/NotEqual/Greater/Less/GreaterEqual/LessEqual for operator) -- an unrecognized value is returned as its raw number rather than guessed, and is still correct data, just not named yet. A sheet or range with no data validation returns an empty validationGroups array, not an error. Does NOT require the VBA Trust Center setting: this only touches the normal Excel object model (Worksheet/Range/Validation), not VBProject.",
+  "List data validation rules in a worksheet's cells -- input constraints (dropdown list, number/date range, text length) that appear nowhere in VBA code or in the cell's formula. " +
+  "For type 'List', exampleFormula1 IS the dropdown's source: either literal choices ('Yes,No,Maybe') or a range reference ('=$D$1:$D$5'). " +
+  "Cells are grouped by type, operator and position-normalized Formula1/Formula2, so one rule applied down many rows is a single group with a cellCount. " +
+  "type/operator get readable names where known; an unrecognized value comes back as its raw number rather than a guess -- still correct, just unnamed. " +
+  "No rules returns an empty validationGroups array, not an error. Does NOT require the VBA Trust Center setting.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
     sheet: z.string().describe("Worksheet name to scan for data validation rules."),
     range: z.string().optional().describe("Cell range address, e.g. 'A1:D100'. Omit to scan the sheet's entire UsedRange -- prefer a bounded range on very large sheets for speed."),
   },
@@ -937,7 +963,10 @@ try {
 
 server.tool(
   "excel_list_macros",
-  "List runnable procedures (Subs; module-level Public or implicitly-public -- Private/Friend are excluded, and Functions are not listed) in one VBA module, or in every module of the workbook at once if moduleName is omitted -- prefer omitting moduleName over calling this once per module when you need the whole workbook's macros, since each call re-resolves Excel/the workbook. Each result includes a fully-qualified name usable directly as the 'qualified' argument to excel_run_macro. Scans all currently open workbooks for a matching module unless workbookPath narrows it to one specific file (auto-launching/opening it if needed).",
+  "List runnable macros: module-level Public (or implicitly public) Subs. Private/Friend Subs and all Functions are excluded. " +
+  "Omit moduleName to cover the whole workbook in one call -- do that rather than calling once per module, since each call re-resolves Excel. " +
+  "Each result carries a fully-qualified name to pass straight to excel_run_macro as 'qualified'. " +
+  "Scans all open workbooks unless workbookPath narrows it to one file.",
   {
     moduleName: z.string().optional().describe("VBA module name to enumerate procedures in. Omit to list macros from every module in the target workbook in a single call."),
     basPath: z.string().optional().describe("Optional: full path to a previously-exported .bas file for this module; if given, its content hash is used to disambiguate which open workbook to target when multiple books have a same-named module."),
@@ -990,17 +1019,19 @@ server.tool(
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_run_macros ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_run_macro",
-  "Run a VBA macro via Application.Run. WARNING: if the macro shows a dialog (MsgBox, InputBox) or a UserForm, or otherwise waits for user interaction, this call will hang until timeoutMs is reached; the timeout only stops this tool's own wait -- it does NOT close the dialog or unstick Excel, so check Excel directly afterward if you hit ERR_TIMEOUT. IMPORTANT: a successful response only means Application.Run completed without throwing an exception -- it does NOT confirm the macro did the intended thing (cell writes, files written, etc. are not verified by this tool). Prefer excel_list_macros first to get an exact 'qualified' name rather than guessing moduleName/procName.",
+  "Run a VBA macro via Application.Run. Get an exact 'qualified' name from excel_list_macros rather than guessing moduleName/procName. " +
+  "WARNING: a macro that shows a dialog (MsgBox, InputBox, a modal UserForm) will hang this call until timeoutMs. The timeout only ends this tool's wait -- it does not close the dialog or unstick Excel, so check Excel directly after an ERR_TIMEOUT. " +
+  "Success only means Application.Run returned without throwing; it does NOT confirm the macro did what was intended -- verify effects yourself (e.g. excel_read_range).",
   {
-    qualified: z.string().optional().describe("Fully-qualified macro name, e.g. \"'Book1.xlsm'!Module1.DoWork\" (as returned by excel_list_macros). Takes priority over moduleName/procName if both are given."),
-    moduleName: z.string().optional().describe("Module name. Required together with procName if 'qualified' is not given."),
-    procName: z.string().optional().describe("Procedure (Sub) name within moduleName. Required together with moduleName if 'qualified' is not given."),
-    workbookName: z.string().optional().describe("Optional: display name of the workbook to disambiguate when the same module/proc name exists in multiple open workbooks."),
-    basPath: z.string().optional().describe("Optional: full path to a previously-exported .bas file; its content hash disambiguates which open workbook to target."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed, instead of requiring it to already be open."),
-    ActivateExcel: z.boolean().optional().describe("Bring the Excel window to the foreground before running."),
-    ShowStatus: z.boolean().optional().describe("Show a transient message in Excel's status bar while/after running."),
-    timeoutMs: z.number().optional().describe("Milliseconds to wait before giving up and returning ERR_TIMEOUT. Default 30000. Does not stop Excel itself if it's blocked on a dialog."),
+    qualified: z.string().optional().describe("Fully-qualified name, e.g. \"'Book1.xlsm'!Module1.DoWork\" (from excel_list_macros). Wins over moduleName/procName."),
+    moduleName: z.string().optional().describe("Module name. Needs procName too, if 'qualified' is not given."),
+    procName: z.string().optional().describe("Sub name within moduleName. Needs moduleName too, if 'qualified' is not given."),
+    workbookName: z.string().optional().describe("Workbook display name, to disambiguate when several open workbooks share the module/proc name."),
+    basPath: z.string().optional().describe("Path to a previously-exported .bas; its content hash disambiguates which open workbook to target."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
+    ActivateExcel: z.boolean().optional().describe("Bring the Excel window to the foreground first."),
+    ShowStatus: z.boolean().optional().describe("Show a transient message in Excel's status bar."),
+    timeoutMs: z.number().optional().describe("Wait before returning ERR_TIMEOUT. Default 30000. Does not unstick Excel itself."),
   },
   async (params) => {
     const ps = process.env.MCP_PS_RUN || process.env.MCP_PS_LIST;
@@ -1082,12 +1113,12 @@ server.tool(
   "vba_search_code",
   "Search VBA source code for a literal string or regex across all currently open workbooks (or one specific workbook via workbookPath / workbookFilter). Returns matching LINES with context (workbook/module/proc/line number), not full module code -- use excel_get_module_code to read a whole module. Results are capped at maxResults (default 50); if there were more matches, the response sets truncated:true and totalMatchCount so you know to narrow the query rather than assuming there were no more hits. Values that look like a hardcoded password/API key/Authorization header within a matched snippet are automatically masked as [REDACTED] -- always on, best-effort only.",
   {
-    query: z.string().describe("Search text. Plain substring by default, or a .NET regex pattern if useRegex is true. Case-insensitive."),
-    moduleFilter: z.string().optional().describe("Restrict the search to a single module name."),
-    workbookFilter: z.string().optional().describe("Restrict the search to a single open workbook's display name."),
-    useRegex: z.boolean().optional().describe("Treat 'query' as a .NET regular expression instead of a literal substring."),
-    workbookPath: z.string().optional().describe("Full path to a workbook to include in the search. If set and not already open, Excel is auto-launched and the file auto-opened before searching."),
-    maxResults: z.number().optional().describe("Maximum number of hits to return in one call. Default 50. Excess hits are dropped, with truncated:true and totalMatchCount reported instead."),
+    query: z.string().describe("Search text: plain substring, or a .NET regex if useRegex is true. Case-insensitive."),
+    moduleFilter: z.string().optional().describe("Limit to one module name."),
+    workbookFilter: z.string().optional().describe("Limit to one open workbook's display name."),
+    useRegex: z.boolean().optional().describe("Treat 'query' as a .NET regex instead of a literal substring."),
+    workbookPath: z.string().optional().describe("Full path to a workbook to include. Auto-launches Excel and opens the file if needed."),
+    maxResults: z.number().optional().describe("Hit cap for one call. Default 50; excess is dropped with truncated:true and totalMatchCount."),
   },
   async (params) => {
     // PowerShellワンライナーで開いている全ブックの全モジュールを走査
@@ -1341,12 +1372,16 @@ $res | ConvertTo-Json -Depth 6
 
 server.tool(
   "vba_analyze_flow",
-  "Analyze the control-flow structure (branches, loops, GoTo/labels, calls) of a VBA procedure, or list procedures in a module, as structured JSON -- for answering questions like 'where does this GoTo jump to' or 'is there an unreachable branch' directly from data, without re-reading and mentally parsing raw code. Reuses the same analyzer as the extension's manual 'Generate VBA Flow Chart' command (If/ElseIf/Else, Do/Loop, For/Next, Select Case, With, GoTo/labels, Exit/Return, Err.Raise), run as an external process against a live snapshot of the module's current code (not the exported .bas/.cls/.frm on disk). Omit 'procedure' to get a lightweight list of {name, kind, startLine, endLine} for every Sub/Function/Property in the module -- prefer this over full analysis when you just need to know what procedures exist. Cross-module calls ARE resolved (every module in the workbook is snapshotted alongside the target one): resolved:false on a call means the callee genuinely could not be found anywhere in this workbook, not merely that this tool didn't check other modules. Never writes anything to disk. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  "Analyze a VBA procedure's control flow (If/ElseIf/Else, Do/Loop, For/Next, Select Case, With, GoTo/labels, Exit/Return, Err.Raise, calls) as structured JSON -- answers 'where does this GoTo jump to' or 'is this branch reachable' from data instead of re-reading raw code. " +
+  "Runs against a live snapshot of the module, not the exported files on disk. " +
+  "Omit 'procedure' to get a cheap list of {name, kind, startLine, endLine} for every procedure in the module -- do that first if you don't know the exact name. " +
+  "Cross-module calls are resolved (all modules are snapshotted), so resolved:false means the callee is genuinely absent from this workbook, not merely unchecked. " +
+  "Read-only; writes nothing to disk. Pass workbookPath (full path) unless the workbook is already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' is off.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
     module: z.string().describe("VBA module name to analyze."),
-    procedure: z.string().optional().describe("Procedure (Sub/Function/Property) name within module to get full flow detail for. Omit to instead get a lightweight list of every procedure in the module ({name, kind, startLine, endLine}) without flow detail -- cheaper, use this first if you don't already know the exact procedure name."),
+    procedure: z.string().optional().describe("Procedure to get full flow detail for. Omit to get a cheap list of every procedure in the module instead."),
   },
   async (params) => {
     if (!params.workbook && !params.workbookPath) {
@@ -1470,10 +1505,12 @@ server.tool(
 // all Mermaid output is generated in a throwaway temp folder and returned inline, then removed.
 server.tool(
   "vba_render_flowchart",
-  "Render a VBA procedure's control flow as Mermaid flowchart text (flowchart TD), or the whole module's call graph if 'procedure' is omitted -- for pasting into a Markdown preview, mermaid.live, or a Mermaid-rendering chat client to see a diagram instead of reasoning over vba_analyze_flow's raw JSON. Uses the exact same rendering logic as the extension's manual 'Generate VBA Flow Chart' command (If/ElseIf/Else, Do/Loop, For/Next, Select Case, GoTo/labels rendered as Mermaid node/edge shapes), run as an external process against a live snapshot of the module's current code (not the exported .bas/.cls/.frm on disk). Cross-module calls in the call graph ARE resolved (every module in the workbook is snapshotted alongside the target one). Never writes anything to disk (no vbaExport/.mmd files are created; the workbook's own folder is untouched). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  "Render a VBA procedure's control flow as Mermaid text (flowchart TD), or the module's call graph if 'procedure' is omitted -- paste it into a Markdown preview or a Mermaid-rendering client to see a diagram instead of reading vba_analyze_flow's raw JSON. " +
+  "Runs against a live snapshot of the module, not the exported files on disk. Cross-module calls in the call graph are resolved. " +
+  "Read-only; writes nothing to disk (no .mmd files). Pass workbookPath (full path) unless the workbook is already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' is off.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
     module: z.string().describe("VBA module name to render."),
     procedure: z.string().optional().describe("Procedure (Sub/Function/Property) name within module to render a detailed flowchart for. Omit to instead render the whole module's call graph (which procedure calls which) as a single diagram."),
   },
@@ -1693,11 +1730,17 @@ $res | ConvertTo-Json -Depth 6
 
 server.tool(
   "vba_list_dependencies",
-  "Scan VBA module source for external/platform dependencies via lightweight regex matching -- Windows API 'Declare' statements, CreateObject/GetObject COM automation calls, VBA's built-in Shell function calls, Application.Run (dynamic macro dispatch, including cross-workbook targets), native VBA file I/O (Open/Kill/FileCopy/MkDir/RmDir), Scripting.FileSystemObject file/folder methods (OpenTextFile/CreateTextFile/CopyFile/DeleteFile/MoveFile/CreateFolder/DeleteFolder/MoveFolder -- matched by method name alone, so a fileIo entry with methodNameOnly:true means the call target's actual type was not verified and some other object with a same-named method would also match), and Workbooks.Open (external workbook references). Read-only and advisory: this is best-effort text matching (not a real VBA parser), at the same rigor level as excel_update_module_code's lintWarnings -- it can miss dynamic or commented-out cases, and can rarely false-positive on text that merely resembles the pattern inside an unrelated string literal. A procedure with no incoming calls found by vba_analyze_flow is not necessarily unused -- check here for an Application.Run dispatching to it by name before concluding that. Useful for scoping migration work (e.g. Office Scripts has no equivalent for any of these), auditing what a workbook automates outside VBA itself, or finding which other files must travel together with this workbook (Workbooks.Open targets). Omit 'module' to scan every module in the workbook in a single COM session; pass it to scan only that module. Modules with zero findings are omitted from the response. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  "Scan VBA source for external/platform dependencies: Windows API Declare statements, CreateObject/GetObject, Shell, Application.Run (dynamic dispatch, incl. cross-workbook), native file I/O (Open/Kill/FileCopy/MkDir/RmDir), Scripting.FileSystemObject file/folder methods, and Workbooks.Open. " +
+  "Useful for scoping migration work, auditing what a workbook touches outside VBA, and finding files that must travel with it. " +
+  "A procedure that vba_analyze_flow shows as uncalled is not necessarily dead -- check here for an Application.Run dispatching to it by name first. " +
+  "fileIo entries with methodNameOnly:true were matched by method name only, so the call target's type was not verified. " +
+  "Read-only, best-effort regex matching -- not a real VBA parser; it can miss dynamic cases and occasionally match lookalike text inside a string literal. " +
+  "Omit 'module' to scan the whole workbook in one COM session. Modules with no findings are omitted. " +
+  "Pass workbookPath (full path) unless the workbook is already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' is off.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
-    module: z.string().optional().describe("VBA module name to scan. Omit to scan every module in the workbook in one call."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
+    module: z.string().optional().describe("Module to scan. Omit to scan the whole workbook."),
   },
   async (params) => {
     if (!params.workbook && !params.workbookPath) {
@@ -1766,11 +1809,16 @@ server.tool(
 // here. The regex matching itself lives in referenceScan.ts, pure and COM-free.
 server.tool(
   "vba_list_references",
-  "List event-procedure entry points and internal Excel object references via lightweight regex matching. Event procedures: Workbook_*/Worksheet_*/UserForm_* (matched by VBA's own naming convention, so no event-name list is needed) plus legacy Auto_Open/Auto_Close -- these are candidate triggers for code the user never calls directly, so a procedure with no incoming calls in vba_analyze_flow is not necessarily unused if it's one of these (or is dispatched by vba_list_dependencies' Application.Run). Embedded ActiveX control events (e.g. CommandButton1_Click) are NOT detected -- telling those apart from an ordinary Sub needs the sheet/form's control names, which this tool does not read. References: Worksheets(...)/Sheets(...) by name (sheetName is the literal when static, null with dynamic:true otherwise), and likely named-range references via Range(...)/Names(...) -- Range(\"...\") is only reported when the literal does NOT look like a plain cell address (e.g. \"A1\", \"B2:C10\"), since those make up the overwhelming majority of ordinary Range(...) calls and would otherwise drown out genuine named-range references; dynamic Range(variable) calls are not reported at all for the same reason (most are computed cell addresses, not named-range access), while Names(...) is reported even when dynamic since any use of the Names collection is inherently about a named range. Useful for impact analysis: what triggers exist in this workbook, and what would break if a given sheet were renamed/deleted or a named range were removed. Read-only and advisory -- best-effort text matching, not a real VBA parser, at the same rigor level as vba_list_dependencies and excel_update_module_code's lintWarnings. Omit 'module' to scan every module in the workbook in a single COM session; modules with no findings in any category are omitted from the response. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  "List event-procedure entry points and internal Excel object references, for impact analysis: what triggers this workbook has, and what breaks if a sheet is renamed or a named range removed. " +
+  "Events: Workbook_*/Worksheet_*/UserForm_* (matched by VBA's naming convention) plus legacy Auto_Open/Auto_Close. These are triggers nobody calls directly, so a procedure with no incoming calls in vba_analyze_flow is not necessarily dead. Embedded ActiveX control events (e.g. CommandButton1_Click) are NOT detected -- separating those from an ordinary Sub needs control names this tool does not read. " +
+  "References: Worksheets(...)/Sheets(...) by name (sheetName null with dynamic:true when computed), plus likely named ranges via Range(...)/Names(...). Range(\"...\") is reported only when the literal does not look like a plain cell address, and dynamic Range(variable) is skipped entirely -- otherwise ordinary cell access would drown out real named-range use. Names(...) is always reported. " +
+  "Read-only, best-effort regex matching -- not a real VBA parser. " +
+  "Omit 'module' to scan the whole workbook in one COM session. Modules with no findings are omitted. " +
+  "Pass workbookPath (full path) unless the workbook is already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' is off.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
-    module: z.string().optional().describe("VBA module name to scan. Omit to scan every module in the workbook in one call."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
+    module: z.string().optional().describe("Module to scan. Omit to scan the whole workbook."),
   },
   async (params) => {
     if (!params.workbook && !params.workbookPath) {
@@ -1833,13 +1881,20 @@ server.tool(
 // here. The regex matching itself lives in variableScopeScan.ts, pure and COM-free.
 server.tool(
   "vba_list_variable_scopes",
-  "List variable and constant declarations (Dim/Private/Public/Static/Const) classified by scope: 'procedure' (local to one Sub/Function/Property -- declaredIn names it), 'module' (Private, or unmarked Dim/Const at module level -- visible module-wide but not from other modules), or 'public' (Public at module level -- visible from anywhere in the project). This exists because VBE's own Find & Replace ('Search In: Current Project') is a blind text substitution with no concept of scope: it will happily replace an unrelated local variable in a completely different procedure just because it shares the same name. Omit 'variableName' to list every declaration in 'module' (or the whole workbook if 'module' is also omitted) -- this establishes a declaration's true boundary. Provide 'variableName' (module becomes required) to instead find every usage of that one declaration within its correct boundary: module-/public-scoped lookups automatically skip any procedure that shadows the name with its own local declaration, so an unrelated same-named local elsewhere is never mixed in. If the name matches more than one declaration in 'module' (several procedures each with their own same-named local, or a module-level declaration itself shadowed by a same-named local somewhere), the response is ambiguous_declaration listing every candidate (scope, declaredIn, line) -- pass 'procedure' (matching a candidate's declaredIn) to pick one. Each usage is classified 'write' (matched via a Set-optional assignment pattern near the line start) or 'reference' (everything else -- not distinguishing a read from e.g. an 'If name = x Then' comparison beyond that). The declaration's own line is never included as a usage. Read-only and advisory throughout: best-effort text matching, not a real VBA parser, at the same rigor level as vba_list_dependencies/vba_list_references (e.g. 'Static Sub Foo()' is correctly excluded as a procedure header rather than a Static variable, but no attempt is made to parse array bounds, string lengths, or line-continuation edge cases beyond the ordinary 'Dim x As Long, y As String' and 'Dim arr(1 To 10, 1 To 5) As Variant'-style comma splitting). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off.",
+  "List variable/constant declarations (Dim/Private/Public/Static/Const) classified by scope: 'procedure' (local to one Sub/Function/Property, named by declaredIn), 'module' (module-wide, not visible to other modules), or 'public' (project-wide). " +
+  "Use it before a rename: VBE's own Find & Replace has no concept of scope and will happily hit an unrelated same-named local in another procedure. " +
+  "Omit variableName to list all declarations in 'module' (or the whole workbook if 'module' is also omitted). " +
+  "Give variableName ('module' then required) to instead find that one declaration's usages within its correct boundary -- module/public lookups skip any procedure that shadows the name locally, so unrelated same-named locals are never mixed in. " +
+  "If the name matches several declarations, the response is ambiguous_declaration listing each candidate (scope, declaredIn, line); pass 'procedure' matching one candidate's declaredIn to choose. " +
+  "Usages are classified 'write' (assignment-shaped) or 'reference' (everything else); the declaration's own line is never counted. " +
+  "Read-only, best-effort text matching -- not a real VBA parser. " +
+  "Pass workbookPath (full path) unless the workbook is already open, in which case 'workbook' (display name) is enough. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' is off.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
-    module: z.string().optional().describe("VBA module name to scan. Omit to scan every module in the workbook in one call (list-declarations mode only -- required when variableName is given)."),
-    variableName: z.string().optional().describe("Variable or constant name to find usages of. Provide this to switch from listing declarations to finding usage sites; when given, 'module' becomes required."),
-    procedure: z.string().optional().describe("Disambiguates which declaration 'variableName' refers to, when more than one exists in 'module' -- match it against a candidate's declaredIn from the ambiguous_declaration error. Only meaningful together with 'variableName'."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
+    module: z.string().optional().describe("Module to scan. Omit to scan the whole workbook (declaration-listing mode only; required with variableName)."),
+    variableName: z.string().optional().describe("Switches to usage-finding mode for this one name. Requires 'module'."),
+    procedure: z.string().optional().describe("Picks one candidate when variableName is ambiguous -- match a declaredIn from the ambiguous_declaration response."),
   },
   async (params) => {
     if (!params.workbook && !params.workbookPath) {
@@ -2163,15 +2218,21 @@ function lintVbaCode(code: string): VbaLintWarning[] {
 
 server.tool(
   "excel_update_module_code",
-  "Overwrite the code of an EXISTING VBA module, or create a brand-new one when moduleType is set. UserForm (.frm) modules CAN be overwritten: only the form's code-behind (event handlers) is replaced, and the Designer side -- the controls themselves, their positions/sizes, and the paired .frx binary -- is left completely untouched, so adding, moving or renaming a control still has to be done by a human in the VBE form designer (call excel_list_form_controls first to confirm a control actually exists before writing code that references it). Creating a NEW UserForm is still not supported (moduleType accepts only 'standard' and 'class') -- ask the user to add the form manually. REQUIRED two-step flow: (1) call once with dryRun:true to preview a diff against the current code and receive a confirmToken; (2) call again with the exact same workbook/workbookPath, module and newCode plus that confirmToken to actually write -- calling without a valid confirmToken is rejected. The confirmToken is bound to the module's code as it was at dry-run time: immediately before writing, the tool re-reads the module and recomputes the token -- if the code changed since the dry-run (e.g. another client wrote to it first), the write is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN instead of silently overwriting that change. A timestamped backup of the code being replaced is always written to '<workbook folder>/.excel-vba-sync-backups' before the write happens. If the target is a Sheet/ThisWorkbook code-behind module (componentType 100), per-procedure Attribute lines such as an assigned macro shortcut key CANNOT be preserved (VBA API limitation, not a bug) -- check willLoseShortcutAttributes in the dry-run response before proceeding on such modules. The dry-run response also includes lintWarnings: a best-effort, regex-based static check (not a real VBA parser) for a small set of common issues -- Select/Activate/Selection/ActiveSheet/ActiveWorkbook usage, missing Option Explicit, UsedRange, bare End statements, overly long procedures, missing Set before an object assignment, Declare without PtrSafe, and hardcoded file numbers. These are advisory only and never block the write. The dry-run response also includes duplicateProcedureWarnings: Sub/Function/Property names in newCode that already exist as a Public procedure in some OTHER module of the project -- each entry has a risk of either public_duplicate (newCode's own procedure is also Public: usually means a procedure was meant to move to a new/different module but the original copy was left behind) or private_name_reused (newCode's procedure is Private: no functional/compile collision, since VBA always resolves the same-module Private first, but the name is already meaningful elsewhere in the project and worth renaming for clarity). A same-named Private procedure in the OTHER module is never checked against, since that can never collide with anything outside its own module. Always advisory -- never blocks the write. To create a new module instead of overwriting one, pass moduleType ('standard' or 'class') together with a module name that does not yet exist. The dry-run response then reports mode as 'create', and the confirmToken is bound to (module, moduleType, newCode) rather than to any existing code, since none exists yet. If a module with that name is created by someone else between the dry-run and the confirming call, the write is rejected with ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN instead of colliding with it. No backup is written when creating a new module (there is nothing to back up), and the response's componentType is 1 for a standard module or 2 for a class module. IMPORTANT: this tool never saves the workbook to disk -- the write lands in the live Excel process's VBA project (visible immediately in the VBE, runnable via excel_run_macro) but is only persisted to the .xlsm file once the workbook is explicitly saved (there is currently no save tool; this is intentional, not an oversight -- see the note in the write-safety section of docs/AI_USAGE.md for why). Tell the user their change is not yet saved to disk after a successful write.",
+  "Overwrite an EXISTING VBA module's code, or create a new one when moduleType is set. " +
+  "REQUIRED two-step flow: call with dryRun:true to preview and get a confirmToken, then call again with identical arguments plus that token to actually write; writing without a valid token is rejected. " +
+  "The token is bound to the target's state at dry-run time -- if that changed in between, the write is rejected (ERR_MODULE_CHANGED_SINCE_DRYRUN when overwriting, ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN when creating) instead of clobbering it; re-run dryRun for a fresh token. " +
+  "UserForms: only the code-behind is replaced. Controls, their layout and the .frx binary are untouched, so adding/moving/renaming a control must be done by a human in the VBE (check excel_list_form_controls before referencing one). Creating a new UserForm is not supported. " +
+  "Overwrites write a timestamped backup to '<workbook folder>/.excel-vba-sync-backups' first; creates do not (nothing to back up). " +
+  "The dry-run response carries advisory findings that never block the write: lintWarnings (regex-based static checks, not a real VBA parser), duplicateProcedureWarnings (procedure names in newCode that already exist as Public in another module; risk is public_duplicate or private_name_reused), and willLoseShortcutAttributes -- true only for Sheet/ThisWorkbook modules (componentType 100), where per-procedure Attribute lines such as macro shortcut keys cannot survive this write path. " +
+  "IMPORTANT: this never saves the workbook to disk. The write is live in the VBA project (visible in the VBE, runnable via excel_run_macro) but is not persisted until the workbook is saved -- tell the user their change is not yet saved.",
   {
-    workbook: z.string().optional().describe("Workbook display name. Either this or workbookPath is required; workbookPath is preferred since it also auto-launches/opens Excel if needed."),
-    workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed."),
-    module: z.string().describe("Name of a VBA module. When moduleType is omitted, this must be an EXISTING module to overwrite. When moduleType is set, this is the name of a NEW module to create -- it must not already exist."),
-    moduleType: z.enum(["standard", "class"]).optional().describe("Set this to create module NAME as a brand-new module instead of overwriting an existing one. 'standard' = .bas (StdModule), 'class' = .cls (Class module). UserForm modules cannot be created this way. Omit this parameter entirely to overwrite an existing module (unchanged default behavior)."),
-    newCode: z.string().describe("Full replacement source code for the module (procedure bodies only -- do not include Attribute lines)."),
-    dryRun: z.boolean().optional().describe("If true, only preview the change (or, in create mode, the module that would be created) and return a confirmToken; does not write anything."),
-    confirmToken: z.string().optional().describe("Token obtained from a prior dryRun:true call with the identical workbook/module/moduleType/newCode. Required to actually perform the write. Rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN in overwrite mode, or ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN in create mode, if the target changed since the dry-run."),
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
+    module: z.string().describe("VBA module name. Must already exist when moduleType is omitted; must NOT exist when moduleType is set."),
+    moduleType: z.enum(["standard", "class"]).optional().describe("Set to create a new module instead of overwriting: 'standard' = .bas, 'class' = .cls. Omit to overwrite an existing module."),
+    newCode: z.string().describe("Full replacement source code (procedure bodies only -- no Attribute lines)."),
+    dryRun: z.boolean().optional().describe("Preview only and return a confirmToken; writes nothing."),
+    confirmToken: z.string().optional().describe("Token from a prior dryRun call with identical arguments. Required to actually write."),
   },
   async (params) => {
     const wb = psq(params.workbook ?? "");
