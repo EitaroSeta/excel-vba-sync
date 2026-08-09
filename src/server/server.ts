@@ -32,10 +32,21 @@ function execFileAsync(...args: any[]): Promise<any> {
   return run;
 }
 
+// serverInfo.version をハードコードすると更新を忘れる（実際、package.json が
+// 0.0.7x まで進む間ずっと "0.1.0" のまま乖離していた）。package.json から読んで
+// 自動追従させる。読めなかった場合だけ "0.0.0" にフォールバックする。
+function readPackageVersion(): string {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+    if (typeof pkg.version === "string" && pkg.version.length > 0) { return pkg.version; }
+  } catch { /* fall through to the placeholder below */ }
+  return "0.0.0";
+}
+
 console.log("# vba-excel-mcp server: booting...");
 
 const server = new McpServer(
-  { name: "vba-excel-mcp", title: "Excel VBA Sync", version: "0.1.0" },
+  { name: "vba-excel-mcp", title: "Excel VBA Sync", version: readPackageVersion() },
   {
     instructions:
       "Read, search, analyze, run macros in, and write to Excel workbooks on this Windows machine, via COM automation. " +
@@ -70,6 +81,30 @@ function getScriptsDir(): string | undefined {
   if (process.env.MCP_SCRIPTS_DIR) { return process.env.MCP_SCRIPTS_DIR; }
   if (process.env.MCP_PS_LIST) { return path.dirname(process.env.MCP_PS_LIST); }
   return undefined;
+}
+
+// FindAndRun-ExcelMacroByModule.ps1 の絶対パスを解決する。
+// MCP_PS_LIST / MCP_PS_RUN は「スクリプトファイルそのもの」を指す旧来の環境変数で、
+// excel_list_macros と excel_run_macro だけがこれらを直接読んでいた。そのため
+// MCP_SCRIPTS_DIR しか渡されない起動経路では、この2ツールだけが動かない
+// （他のツールは getScriptsDir() 経由なので正常）という、気づきにくい不具合が
+// 起きていた（v0.0.41で実際に発生）。ここで getScriptsDir() を最終フォールバックに
+// 加え、全ツールで解決方法を揃える。
+function resolveMacroScript(preferRun: boolean): { ok: true; path: string } | { ok: false; error: string } {
+  const candidates: string[] = [];
+  if (preferRun && process.env.MCP_PS_RUN) { candidates.push(process.env.MCP_PS_RUN); }
+  if (process.env.MCP_PS_LIST) { candidates.push(process.env.MCP_PS_LIST); }
+  const dir = getScriptsDir();
+  if (dir) { candidates.push(path.join(dir, "FindAndRun-ExcelMacroByModule.ps1")); }
+  for (const c of candidates) {
+    if (fs.existsSync(c)) { return { ok: true, path: c }; }
+  }
+  return {
+    ok: false,
+    error: candidates.length
+      ? `ps1 not found: ${candidates.join(" | ")}`
+      : "MCP_SCRIPTS_DIR / MCP_PS_LIST not set",
+  };
 }
 
 // ExcelUtil.ps1 を dot-source する行を生成（見つからない場合は空文字＝スキップ）
@@ -973,13 +1008,11 @@ server.tool(
     workbookPath: z.string().optional().describe("Full path to the workbook file. If set, Excel is auto-launched and the file auto-opened when needed, instead of requiring it to already be open."),
   },
   async (params) => {
-    const ps = process.env.MCP_PS_LIST;
-    if (!ps) {
-      return { content: [{ type: "text", text: JSON.stringify({ error: "MCP_PS_LIST not set" }) }] };
+    const resolved = resolveMacroScript(false);
+    if (!resolved.ok) {
+      return { content: [{ type: "text", text: JSON.stringify({ error: resolved.error }) }] };
     }
-    if (!fs.existsSync(ps)) {
-      return { content: [{ type: "text", text: JSON.stringify({ error: `ps1 not found: ${ps}` }) }] };
-    }
+    const ps = resolved.path;
 
     let args: string[] = [
       "-NoLogo",
@@ -1034,13 +1067,11 @@ server.tool(
     timeoutMs: z.number().optional().describe("Wait before returning ERR_TIMEOUT. Default 30000. Does not unstick Excel itself."),
   },
   async (params) => {
-    const ps = process.env.MCP_PS_RUN || process.env.MCP_PS_LIST;
-    if (!ps) {
-      return { content: [{ type: "text", text: JSON.stringify({ error: "MCP_PS_RUN/MCP_PS_LIST not set" }) }] };
+    const resolved = resolveMacroScript(true);
+    if (!resolved.ok) {
+      return { content: [{ type: "text", text: JSON.stringify({ error: resolved.error }) }] };
     }
-    if (!fs.existsSync(ps)) {
-      return { content: [{ type: "text", text: JSON.stringify({ error: `ps1 not found: ${ps}` }) }] };
-    }
+    const ps = resolved.path;
 
     // ← ここがポイント：一度だけ宣言してから push する
     let args: string[] = [

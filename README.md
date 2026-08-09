@@ -118,7 +118,7 @@ Claude Code・Claude Desktop・Copilot Chat・Codex等のAIクライアントか
 | `excel_list_conditional_formats` | 条件付き書式のルール一覧を取得（同一パターンはグルーピング） |
 | `excel_list_data_validations` | 入力規則の一覧を取得（ドロップダウンの選択肢等） |
 
-コード内容を返すツールは、ハードコードされたパスワード・APIキーらしき値を自動的に`[REDACTED]`へマスクします（常時有効、無効化不可）。対象は`excel_get_module_code`・`excel_update_module_code`・`vba_search_code`・`vba_list_dependencies`・`vba_list_references`・`vba_list_variable_scopes`です。
+コード内容を返すツールは、ハードコードされたパスワード・APIキーらしき値を自動的に`[REDACTED]`へマスクします（常時有効、無効化不可）。対象は`excel_get_module_code`・`excel_update_module_code`・`vba_search_code`・`vba_list_dependencies`・`vba_list_references`・`vba_list_variable_scopes`・`vba_analyze_flow`・`vba_render_flowchart`です。
 
 セットアップ手順・安全設計・既知の注意点は **[docs/AI_USAGE.md](docs/AI_USAGE.md)** を参照してください。
 
@@ -318,7 +318,7 @@ AI clients such as Claude Code, Claude Desktop, Copilot Chat and Codex can read,
 | `excel_list_conditional_formats` | List conditional formatting rules (grouped by pattern) |
 | `excel_list_data_validations` | List data validation rules, including dropdown choices |
 
-Tools that return code content automatically mask values that look like hardcoded passwords or API keys as `[REDACTED]` (always on, no opt-out). This applies to `excel_get_module_code`, `excel_update_module_code`, `vba_search_code`, `vba_list_dependencies`, `vba_list_references` and `vba_list_variable_scopes`.
+Tools that return code content automatically mask values that look like hardcoded passwords or API keys as `[REDACTED]` (always on, no opt-out). This applies to `excel_get_module_code`, `excel_update_module_code`, `vba_search_code`, `vba_list_dependencies`, `vba_list_references`, `vba_list_variable_scopes`, `vba_analyze_flow` and `vba_render_flowchart`.
 
 See **[docs/AI_USAGE.md](docs/AI_USAGE.md)** for setup steps, safety design, and known caveats.
 

@@ -427,6 +427,11 @@ function AnalyzeProcedure {
     }
     $usedIds.Add($id) | Out-Null
 
+    $cleanText = $cleanText -replace '(?i)((?:Password|Pwd|ApiKey|Api_Key|SecretKey|Secret|Token|AccessKey|ClientSecret)\s*=\s*")[^"]*(")', '$1[REDACTED]$2'
+    $cleanText = $cleanText -replace '(?i)((?:Password|Pwd)\s*=\s*)[^;"\s][^;"]*([;"])', '$1[REDACTED]$2'
+    $cleanText = $cleanText -replace '(?i)(setRequestHeader\s*\(?\s*"Authorization"\s*,\s*")[^"]*(")', '$1[REDACTED]$2'
+    $cleanText = $cleanText -replace '(?i)(Authorization\s*[:=]\s*")[^"]*(")', '$1[REDACTED]$2'
+
     $nodes.Add([pscustomobject]@{
       id=$id; type=$type; text=([string]$cleanText).Trim(); line=$line; comment=$comment
     })

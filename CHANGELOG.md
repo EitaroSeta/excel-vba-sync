@@ -11,6 +11,14 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.77] - 2026-08-09
+### ### Fixed
+- Closed the credential-masking gap left open in v0.0.72: `vba_analyze_flow` and `vba_render_flowchart` were the only tools still returning source text unmasked. Investigating it showed the exposure was **wider than v0.0.72's own notes claimed** -- that entry described it as "condition expressions and Err.Raise arguments", but ordinary statements become `op`/`call`/`end` nodes carrying the **entire trimmed source line**, so a secret sitting on any statement inside an analyzed procedure was reaching the model. Every other tool masked it; these two did not.
+- Fixed at `VBA-FlowJson.ps1`'s single node-creation point rather than at the ~20 call sites that build labels, so JSON output, the rendered Mermaid diagram, and the VS Code "Generate VBA Flow Chart" command are all covered at once and cannot drift apart later. The PowerShell patterns mirror `secretRedaction.ts`, including the ordering constraint that made the TypeScript version misbehave during v0.0.72 (the connection-string pattern must require a non-space, non-quote first character, or it re-matches text the identifier pattern already replaced).
+- Verified live end-to-end: wrote a module containing an API key in a `Const`, in an `If` comparison, and inside an `Err.Raise` message, then confirmed neither tool's output contained the secret and both contained `[REDACTED]`. Test module removed afterward.
+- `excel_list_macros` and `excel_run_macro` no longer read `MCP_PS_LIST`/`MCP_PS_RUN` directly. They were the only two tools bypassing `getScriptsDir()`, which is why a launch path supplying just `MCP_SCRIPTS_DIR` broke exactly those two and nothing else -- a failure shaped to look like a bug in the macro tools rather than in configuration. It caused a real regression in v0.0.41, and it caught me again this session while writing a test harness, with full knowledge of the codebase. Both now fall back to `getScriptsDir()` after the legacy variables, so all tools resolve scripts the same way and the trap is gone structurally.
+- `serverInfo.version` is now read from `package.json` instead of being hardcoded. It had been stuck at `"0.1.0"` while the package moved through the 0.0.7x range -- the predictable outcome of a version number that has to be remembered separately.
+
 ## [0.0.76] - 2026-08-09
 ### ### Changed
 - Trimmed every tool description and parameter schema. The `tools/list` payload an AI client receives on connect went from **41,718 to 28,527 characters (roughly 10,430 to 7,130 tokens, a 32% cut)** with no change to behaviour -- measured by querying the running server, not estimated. That payload is re-sent every conversation, so it is a recurring cost paid by every user of every client.

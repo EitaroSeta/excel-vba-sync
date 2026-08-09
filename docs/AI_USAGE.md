@@ -228,7 +228,8 @@ VBAコードにハードコードされたパスワード・APIキー等があ�
 - `excel_update_module_code`のdryRunレスポンスの`currentCode`・`newCode`
 - `vba_search_code`の各ヒットの`snippet`
 - `vba_list_dependencies`・`vba_list_references`・`vba_list_variable_scopes`の各結果の`raw`
+- `vba_analyze_flow`・`vba_render_flowchart`のフローチャートのノードラベル
 
 **常時有効・無効化オプションは無い**（AIエージェントが気を利かせて有効化することを期待する設計では意味が無いため）。対象パターンは`Password`/`Pwd`/`ApiKey`/`SecretKey`/`Secret`/`Token`/`AccessKey`/`ClientSecret`への直接代入、接続文字列に埋め込まれた`Password=`/`Pwd=`、HTTPの`Authorization`ヘッダーの4種類（`src/server/secretRedaction.ts`）。正規表現ベースのベストエフォートであり、これらのキーワードと無関係な変数名に秘密情報が入っている場合は検出できない。
 
-**既知の残課題**：`vba_analyze_flow`/`vba_render_flowchart`（`scripts/VBA-FlowJson.ps1`が条件式や`Err.Raise`の引数をフローチャートのノードラベルとしてほぼ生のまま埋め込む）は、今回のredaction対応の対象外。別のPowerShellスクリプト内の複数箇所に手を入れる必要があり、まだ対応していない。
+`vba_analyze_flow`/`vba_render_flowchart`も対象（v0.0.77で対応）。これらはフローチャートのノードラベルに、条件式だけでなく**通常の文の行そのもの**をほぼ生のまま埋め込むため、実際には他のツールより露出が広かった。`scripts/VBA-FlowJson.ps1`のノード生成処理1箇所（全ラベルが通る場所）でマスクしているので、JSON・Mermaid図・VS Codeの「Generate VBA Flow Chart」コマンドのすべてに同時に効く。
