@@ -158,6 +158,13 @@ test("resolveVariableUsages: module/public scope excludes procedures that shadow
   assert.match(modBUsages[0].raw, /\+ 1/);
 });
 
+test("a hardcoded credential on a declaration line is redacted in the raw field (v0.0.72)", () => {
+  const code = 'Public Const API_KEY = "sk-abc123"';
+  const r = scanModuleForVariableScopes("M", code);
+  const decl = r.declarations.find((d) => d.name === "API_KEY");
+  assert.equal(decl.raw, 'Public Const API_KEY = "[REDACTED]"');
+});
+
 test("resolveVariableUsages: not-found errors", () => {
   const modules = [{ name: "M", code: "Dim x As Long" }];
   const noVar = resolveVariableUsages("M", "noSuchVariable", null, modules);

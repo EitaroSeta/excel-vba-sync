@@ -11,6 +11,7 @@ import { scanModuleForDependencies, ModuleDependencyScan } from "./dependencySca
 import { scanModuleForReferences, ModuleReferenceScan } from "./referenceScan.js";
 import { scanModuleForVariableScopes, ModuleVariableScopeScan, resolveVariableUsages } from "./variableScopeScan.js";
 import { findCrossModuleDuplicates, CrossModuleDuplicate } from "./duplicateProcedureScan.js";
+import { redactSecrets, redactCodeText } from "./secretRedaction.js";
 const execFileAsyncRaw = promisify(execFile);
 // Serializes all Excel-COM-touching PowerShell invocations so concurrent MCP tool
 // calls (e.g. an agent firing off excel_list_modules/excel_list_macros/excel_read_range
@@ -88,6 +89,42 @@ function classifyResult(outText: string): { content: { type: "text"; text: strin
   return { content: [{ type: "text", text: outText }] };
 }
 
+// classifyResult()の派生版。パース済みJSONペイロードの指定フィールドへredactSecrets/
+// redactCodeTextを適用してからテキスト化する。ハードコードされた認証情報がAIモデルへ
+// 生のまま渡るのを防ぐための処理で、常時適用（呼び出し側で無効化するオプションは無い）。
+// JSON抽出・パースに失敗した場合は既存のclassifyResult(outText)にフォールバックする
+// （既存のエラーパスの挙動を変えない）。
+function classifyResultWithRedaction(
+  outText: string,
+  opts: { stringFields?: string[]; arrayField?: { field: string; subField: string } }
+): { content: { type: "text"; text: string }[]; isError?: boolean } {
+  try {
+    const start = Math.min(
+      ...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; })
+    );
+    if (Number.isFinite(start)) {
+      const payload = JSON.parse(outText.slice(start));
+      if (payload && typeof payload === "object") {
+        if (opts.stringFields) {
+          for (const f of opts.stringFields) {
+            if (typeof payload[f] === "string") { payload[f] = redactCodeText(payload[f]); }
+          }
+        }
+        if (opts.arrayField && Array.isArray(payload[opts.arrayField.field])) {
+          for (const item of payload[opts.arrayField.field]) {
+            if (item && typeof item[opts.arrayField.subField] === "string") {
+              item[opts.arrayField.subField] = redactSecrets(item[opts.arrayField.subField]);
+            }
+          }
+        }
+        const isErr = (typeof payload.error === "string" && payload.error.startsWith("ERR_")) || payload.ok === false;
+        return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], isError: isErr || undefined };
+      }
+    }
+  } catch { /* fall through to classifyResult's own raw-passthrough behavior */ }
+  return classifyResult(outText);
+}
+
 // execFileAsyncが非ゼロ終了コードで失敗した場合でも、e.stdout に実際のJSON出力
 // （例: {ok:false, error:"macro not found", ...}）が残っていることが多いため、
 // "ps failed" という汎用メッセージで実際のエラー内容を握りつぶさないようにする
@@ -106,7 +143,7 @@ function extractFailureResult(e: any): { content: { type: "text"; text: string }
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_get_module_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "excel_get_module_code",
-  "Read the full source code of a VBA module (all Sub/Function bodies as VBE would show them; module- and procedure-level Attribute lines, e.g. macro shortcut key bindings, are NOT included -- this reads via CodeModule.Lines()). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off (cannot be enabled programmatically).",
+  "Read the full source code of a VBA module (all Sub/Function bodies as VBE would show them; module- and procedure-level Attribute lines, e.g. macro shortcut key bindings, are NOT included -- this reads via CodeModule.Lines()). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off (cannot be enabled programmatically). Values that look like a hardcoded password/API key/Authorization header are automatically masked as [REDACTED] before this is returned -- always on, no way to disable it, and best-effort only (a secret with no recognizable keyword nearby will not be caught).",
   {
     workbook: z.string().describe("Workbook display name, e.g. 'Book1.xlsm'. Must match an already-open workbook unless workbookPath is also given."),
     module: z.string().describe("VBA module name (e.g. 'Module1', 'Sheet1', 'ThisWorkbook')."),
@@ -162,7 +199,7 @@ try {
         }
       );
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
-      return classifyResult(outText);
+      return classifyResultWithRedaction(outText, { stringFields: ["code"] });
     } catch (e: any) {
       return { content: [{ type: "text", text: JSON.stringify({ ok:false, error:"ps_failed", detail:String(e?.message ?? e) }) }] };
     }
@@ -1079,7 +1116,7 @@ server.tool(
 // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ vba_search_code ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
 server.tool(
   "vba_search_code",
-  "Search VBA source code for a literal string or regex across all currently open workbooks (or one specific workbook via workbookPath / workbookFilter). Returns matching LINES with context (workbook/module/proc/line number), not full module code -- use excel_get_module_code to read a whole module. Results are capped at maxResults (default 50); if there were more matches, the response sets truncated:true and totalMatchCount so you know to narrow the query rather than assuming there were no more hits.",
+  "Search VBA source code for a literal string or regex across all currently open workbooks (or one specific workbook via workbookPath / workbookFilter). Returns matching LINES with context (workbook/module/proc/line number), not full module code -- use excel_get_module_code to read a whole module. Results are capped at maxResults (default 50); if there were more matches, the response sets truncated:true and totalMatchCount so you know to narrow the query rather than assuming there were no more hits. Values that look like a hardcoded password/API key/Authorization header within a matched snippet are automatically masked as [REDACTED] -- always on, best-effort only.",
   {
     query: z.string().describe("Search text. Plain substring by default, or a .NET regex pattern if useRegex is true. Case-insensitive."),
     moduleFilter: z.string().optional().describe("Restrict the search to a single module name."),
@@ -1220,7 +1257,7 @@ $searchRes | ConvertTo-Json -Depth 6
         { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2*1024*1024 }
       );
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
-      return classifyResult(outText);
+      return classifyResultWithRedaction(outText, { arrayField: { field: "hits", subField: "snippet" } });
     } catch (e:any) {
       return { content: [{ type: "text", text: JSON.stringify({ ok:false, error:"ps_failed", detail:String(e?.message ?? e) }) }], isError: true };
     }
@@ -2197,7 +2234,7 @@ server.tool(
           workbook: existsResult.workbook,
           module: params.module,
           moduleType: params.moduleType,
-          newCode: params.newCode,
+          newCode: redactCodeText(params.newCode),
           lintWarnings: lintVbaCode(params.newCode),
           confirmToken: createToken,
           note: "Call this tool again with the same workbook/module/moduleType/newCode and this confirmToken to create the module. If a module with this name gets created by someone else before that call, the write will be rejected with ERR_MODULE_ALREADY_EXISTS_SINCE_DRYRUN instead of colliding with it.",
@@ -2216,8 +2253,8 @@ server.tool(
         workbook: readResult.workbook,
         module: readResult.module,
         componentType: readResult.componentType,
-        currentCode: readResult.currentCode,
-        newCode: params.newCode,
+        currentCode: redactCodeText(readResult.currentCode),
+        newCode: redactCodeText(params.newCode),
         willLoseShortcutAttributes: readResult.componentType === 100,
         lintWarnings: lintVbaCode(params.newCode),
         confirmToken: expectedToken,

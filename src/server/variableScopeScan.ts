@@ -1,3 +1,5 @@
+import { redactSecrets } from "./secretRedaction.js";
+
 // Pure, COM-free regex scanning for vba_list_variable_scopes.
 // No Excel/COM access, no PowerShell invocation -- takes module source text already
 // read by the caller and returns structured findings. Advisory/best-effort text
@@ -162,7 +164,7 @@ export function scanModuleForVariableScopes(moduleName: string, code: string): M
         kind,
         scope,
         declaredIn: enclosing ? enclosing.name : null,
-        raw: line.trim(),
+        raw: redactSecrets(line.trim()),
       });
     }
   });
@@ -218,7 +220,7 @@ function findUsagesInLines(
       module: moduleName,
       line: lineNo,
       kind: writePattern.test(line) ? "write" : "reference",
-      raw: line.trim(),
+      raw: redactSecrets(line.trim()),
     });
   });
 

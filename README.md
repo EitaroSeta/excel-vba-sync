@@ -189,6 +189,8 @@ code --install-extension "$OUT"
 | `excel_list_conditional_formats` | 条件付き書式のルール一覧を取得（同一パターンはグルーピング） / List conditional formatting rules (grouped by pattern) |
 | `excel_list_data_validations` | 入力規則の一覧を取得（ドロップダウンの選択肢等、同一パターンはグルーピング） / List data validation rules, incl. dropdown choices (grouped by pattern) |
 
+コード内容を返すツール（`excel_get_module_code`・`excel_update_module_code`・`vba_search_code`・`vba_list_dependencies`・`vba_list_references`・`vba_list_variable_scopes`）は、ハードコードされたパスワード・APIキーらしき値を自動的に`[REDACTED]`へマスクしてから返します（常時有効、無効化不可） / Tools that return code content (`excel_get_module_code`, `excel_update_module_code`, `vba_search_code`, `vba_list_dependencies`, `vba_list_references`, `vba_list_variable_scopes`) automatically mask values that look like hardcoded passwords/API keys as `[REDACTED]` before returning them (always on, no opt-out).
+
 セットアップ手順・安全設計・既知の注意点は **[docs/AI_USAGE.md](docs/AI_USAGE.md)** を参照してください。
 
 This extension has a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, allowing AI clients — Claude Code, Claude Desktop, VS Code's own Copilot Chat, Codex, etc. — to read, search, and run VBA code, and even write AI-authored code directly into an Excel VBA module (option ② in "[Two Ways to Use This](#two-ways)" above).

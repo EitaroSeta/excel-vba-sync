@@ -79,3 +79,10 @@ test("whole-line comments are excluded", () => {
   assert.equal(r.eventProcedures.length, 0);
   assert.equal(r.namedRangeReferences.length, 0);
 });
+
+test("a hardcoded credential on a matched line is redacted in the raw field (v0.0.72)", () => {
+  const code = 'Set ws = Worksheets("Config"): Password = "hunter2"';
+  const r = scanModuleForReferences("M", code);
+  assert.equal(r.sheetReferences.length, 1);
+  assert.equal(r.sheetReferences[0].raw, 'Set ws = Worksheets("Config"): Password = "[REDACTED]"');
+});

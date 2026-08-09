@@ -1,3 +1,5 @@
+import { redactSecrets } from "./secretRedaction.js";
+
 // Pure, COM-free regex scanning for vba_list_dependencies.
 // No Excel/COM access, no PowerShell invocation -- takes module source text already
 // read by the caller and returns structured findings. Advisory/best-effort text
@@ -141,7 +143,7 @@ export function scanModuleForDependencies(moduleName: string, code: string): Mod
         ptrSafe: !!ptrSafeRaw,
         lib,
         alias: alias ?? null,
-        raw: line.trim(),
+        raw: redactSecrets(line.trim()),
       });
     }
 
@@ -155,13 +157,13 @@ export function scanModuleForDependencies(moduleName: string, code: string): Mod
         api: api as "CreateObject" | "GetObject",
         progId: progId ?? null,
         dynamic: progId === undefined,
-        raw: line.trim(),
+        raw: redactSecrets(line.trim()),
       });
     }
 
     RX_SHELL.lastIndex = 0;
     if (RX_SHELL.test(line)) {
-      shellCalls.push({ module: moduleName, line: lineNo, raw: line.trim() });
+      shellCalls.push({ module: moduleName, line: lineNo, raw: redactSecrets(line.trim()) });
     }
 
     RX_APPLICATION_RUN.lastIndex = 0;
@@ -173,7 +175,7 @@ export function scanModuleForDependencies(moduleName: string, code: string): Mod
         line: lineNo,
         target: target ?? null,
         dynamic: target === undefined,
-        raw: line.trim(),
+        raw: redactSecrets(line.trim()),
       });
     }
 
@@ -186,13 +188,13 @@ export function scanModuleForDependencies(moduleName: string, code: string): Mod
         line: lineNo,
         target: target ?? null,
         dynamic: target === undefined,
-        raw: line.trim(),
+        raw: redactSecrets(line.trim()),
       });
     }
 
     for (const p of FILE_IO_PATTERNS) {
       if (p.regex.test(line)) {
-        fileIo.push({ module: moduleName, line: lineNo, operation: p.operation, methodNameOnly: p.methodNameOnly, raw: line.trim() });
+        fileIo.push({ module: moduleName, line: lineNo, operation: p.operation, methodNameOnly: p.methodNameOnly, raw: redactSecrets(line.trim()) });
       }
     }
   });

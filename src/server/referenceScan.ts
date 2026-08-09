@@ -1,3 +1,5 @@
+import { redactSecrets } from "./secretRedaction.js";
+
 // Pure, COM-free regex scanning for vba_list_references.
 // No Excel/COM access, no PowerShell invocation -- takes module source text already
 // read by the caller and returns structured findings. Advisory/best-effort text
@@ -87,7 +89,7 @@ export function scanModuleForReferences(moduleName: string, code: string): Modul
       else if (/^Workbook$/i.test(prefix ?? "")) { eventKind = "workbook_event"; }
       else if (/^Worksheet$/i.test(prefix ?? "")) { eventKind = "worksheet_event"; }
       else { eventKind = "userform_event"; }
-      eventProcedures.push({ module: moduleName, line: lineNo, procedure: name, eventKind, raw: line.trim() });
+      eventProcedures.push({ module: moduleName, line: lineNo, procedure: name, eventKind, raw: redactSecrets(line.trim()) });
     }
 
     RX_SHEET_REF.lastIndex = 0;
@@ -100,7 +102,7 @@ export function scanModuleForReferences(moduleName: string, code: string): Modul
         api: api as "Worksheets" | "Sheets",
         sheetName: sheetName ?? null,
         dynamic: sheetName === undefined,
-        raw: line.trim(),
+        raw: redactSecrets(line.trim()),
       });
     }
 
@@ -117,7 +119,7 @@ export function scanModuleForReferences(moduleName: string, code: string): Modul
     while ((rangeMatch = RX_RANGE_REF.exec(line)) !== null) {
       const literal = rangeMatch[1];
       if (!RX_LOOKS_LIKE_CELL_ADDRESS.test(literal)) {
-        namedRangeReferences.push({ module: moduleName, line: lineNo, source: "Range", name: literal, dynamic: false, raw: line.trim() });
+        namedRangeReferences.push({ module: moduleName, line: lineNo, source: "Range", name: literal, dynamic: false, raw: redactSecrets(line.trim()) });
       }
     }
 
@@ -131,7 +133,7 @@ export function scanModuleForReferences(moduleName: string, code: string): Modul
         source: "Names",
         name: name ?? null,
         dynamic: name === undefined,
-        raw: line.trim(),
+        raw: redactSecrets(line.trim()),
       });
     }
   });

@@ -124,3 +124,10 @@ test("real false positive (caught against the test workbook): commented-out Open
   assert.equal(r.fileIo.length, 1);
   assert.equal(r.fileIo[0].raw, "Open filePath For Append As #fnum");
 });
+
+test("a hardcoded credential on a matched line is redacted in the raw field (v0.0.72)", () => {
+  const code = 'Shell "net use \\\\server /user:admin Password=hunter2"';
+  const r = scanModuleForDependencies("M", code);
+  assert.equal(r.shellCalls.length, 1);
+  assert.equal(r.shellCalls[0].raw, 'Shell "net use \\\\server /user:admin Password=[REDACTED]"');
+});

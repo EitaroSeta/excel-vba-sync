@@ -40,6 +40,7 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 - **ワークブック全体のマクロ一覧が欲しい場合** → `excel_list_macros`の`moduleName`を省略する。1回の呼び出しで全モジュール分を返す。モジュールごとに1回ずつ呼ぶループは避ける（Excel解決処理がモジュール数だけ繰り返され、応答が返ってこないように見えた実例あり）
 - **AIが生成したVBAコードでシート名・フォームコントロール名・名前付き範囲を参照する前** → `excel_list_worksheets`（実在するシート名・コード名・表示状態）／`excel_list_form_controls`（UserFormのコントロール名・種類）／`excel_list_defined_names`（名前付き範囲・`refersTo`・壊れているかどうか）で実在確認する。存在しない名前を無条件に信じてコードを書くと、書き込み時ではなく**実行時**に初めてエラーになる。いずれも読み取り専用で、シート・フォームコントロール・名前付き範囲の新規作成/リネームは（AIに一任すべきか判断がまだついていないため）意図的に対象外——見つからなければユーザーに手動作成を促す
 - **マイグレーション調査でVBAコードだけ見て満足しない** → マクロが出力した値を、さらにセル上の数式（VLOOKUP等）・条件付き書式・入力規則が加工/制約して人間向けの情報にしているケースがある。`excel_read_range`は計算結果の値しか返さないため、数式そのものを見るには`excel_list_formulas`、色分け等のルールは`excel_list_conditional_formats`、ドロップダウンの選択肢等の入力制約は`excel_list_data_validations`（`type: "List"`のときの`exampleFormula1`が実際の選択肢）を使う。いずれもフィルダウンされた同一パターンのルールは自動的に1グループへ集約されるため、`cellCount`が大きくても「同じルールが多数のセルに適用されている」と解釈すればよい。`type`/`operator`は判明している値のみ名前に変換され、未知の値は生の数値のまま返る（それでも正しいデータ）
+- **コード中のパスワード・APIキーはAIに見せる前に自動でマスクされる** → 詳細は12「ハードコードされた認証情報の自動マスキング」を参照
 
 ## 3. 書き込み（`excel_update_module_code`）の安全設計
 
@@ -182,3 +183,16 @@ VBEの「検索と置換」（検索対象：現在のプロジェクト）は�
 ## 11. AIエージェント向けの「リファレンス」について
 
 各ツール・各パラメータの説明文（description）がMCPプロトコル経由でAIクライアントに自動的に渡るため、これが実質的なリファレンスとして機能する。コードと説明文が常に同期する方が別ファイル保守よりズレるリスクが低いため、別途リファレンス文書は用意していない。
+
+## 12. ハードコードされた認証情報の自動マスキング（redaction）
+
+VBAコードにハードコードされたパスワード・APIキー等がある場合、それを読み取るツールの結果はそのままAIモデル（クラウド）へ渡ってしまう。これを軽減するため、以下のフィールドは値の部分だけ自動的に`[REDACTED]`へ置換される：
+
+- `excel_get_module_code`の`code`
+- `excel_update_module_code`のdryRunレスポンスの`currentCode`・`newCode`
+- `vba_search_code`の各ヒットの`snippet`
+- `vba_list_dependencies`・`vba_list_references`・`vba_list_variable_scopes`の各結果の`raw`
+
+**常時有効・無効化オプションは無い**（AIエージェントが気を利かせて有効化することを期待する設計では意味が無いため）。対象パターンは`Password`/`Pwd`/`ApiKey`/`SecretKey`/`Secret`/`Token`/`AccessKey`/`ClientSecret`への直接代入、接続文字列に埋め込まれた`Password=`/`Pwd=`、HTTPの`Authorization`ヘッダーの4種類（`src/server/secretRedaction.ts`）。正規表現ベースのベストエフォートであり、これらのキーワードと無関係な変数名に秘密情報が入っている場合は検出できない。
+
+**既知の残課題**：`vba_analyze_flow`/`vba_render_flowchart`（`scripts/VBA-FlowJson.ps1`が条件式や`Err.Raise`の引数をフローチャートのノードラベルとしてほぼ生のまま埋め込む）は、今回のredaction対応の対象外。別のPowerShellスクリプト内の複数箇所に手を入れる必要があり、まだ対応していない。
