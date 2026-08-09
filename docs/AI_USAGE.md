@@ -230,6 +230,13 @@ VBAコードにハードコードされたパスワード・APIキー等があ�
 - `vba_list_dependencies`・`vba_list_references`・`vba_list_variable_scopes`の各結果の`raw`
 - `vba_analyze_flow`・`vba_render_flowchart`のフローチャートのノードラベル
 
-**常時有効・無効化オプションは無い**（AIエージェントが気を利かせて有効化することを期待する設計では意味が無いため）。対象パターンは`Password`/`Pwd`/`ApiKey`/`SecretKey`/`Secret`/`Token`/`AccessKey`/`ClientSecret`への直接代入、接続文字列に埋め込まれた`Password=`/`Pwd=`、HTTPの`Authorization`ヘッダーの4種類（`src/server/secretRedaction.ts`）。正規表現ベースのベストエフォートであり、これらのキーワードと無関係な変数名に秘密情報が入っている場合は検出できない。
+**常時有効・無効化オプションは無い**（AIエージェントが気を利かせて有効化することを期待する設計では意味が無いため）。対象パターンは`Password`/`Pwd`/`ApiKey`/`SecretKey`/`Secret`/`Token`/`AccessKey`/`ClientSecret`への代入、接続文字列に埋め込まれた`Password=`/`Pwd=`、HTTPの`Authorization`ヘッダーの4種類（`src/server/secretRedaction.ts`）。代入は`apiKey = "..."`のような素の代入だけでなく、`Const API_KEY As String = "..."`のように型宣言（`As`句）を挟む形も対象（v0.0.78で対応。VBAで秘密情報をベタ書きする際もっとも自然な書き方であり、それまで素通りしていた）。
+
+正規表現ベースのベストエフォートであり、限界は2方向にある：
+
+- **検出できない**：上記キーワードと無関係な変数名に秘密情報が入っている場合（例：`Dim s As String: s = "..."`）
+- **過剰に検出する**：キーワードを名前の一部に含むだけの無害な変数も対象になる（例：`csrfToken = "..."`）。単語境界を見ていないためで、秘密を漏らすより無害な値を隠すほうが安全という判断から意図的にこの側へ倒している
 
 `vba_analyze_flow`/`vba_render_flowchart`も対象（v0.0.77で対応）。これらはフローチャートのノードラベルに、条件式だけでなく**通常の文の行そのもの**をほぼ生のまま埋め込むため、実際には他のツールより露出が広かった。`scripts/VBA-FlowJson.ps1`のノード生成処理1箇所（全ラベルが通る場所）でマスクしているので、JSON・Mermaid図・VS Codeの「Generate VBA Flow Chart」コマンドのすべてに同時に効く。
+
+なお`.mmd`（Mermaid）側では、角括弧がノード構文を壊すため`[REDACTED]`が**`(REDACTED)`**として出力される。`.flow.json`は`[REDACTED]`のまま。マスク漏れを目視で確認する際は、見るファイルによって探す文字列が変わる点に注意。

@@ -15,7 +15,12 @@ const REDACTED = "[REDACTED]";
 
 const PATTERNS: RegExp[] = [
   // Direct assignment to a credential-shaped identifier: Password = "...", ApiKey = "...", etc.
-  /((?:Password|Pwd|ApiKey|Api_Key|SecretKey|Secret|Token|AccessKey|ClientSecret)\s*=\s*")([^"]*)(")/gi,
+  // The optional As-clause matters more than it looks: a declaration-with-initializer is the
+  // most natural way to hardcode a credential in VBA (Const API_KEY As String = "..."), and
+  // requiring the '=' to follow the identifier directly let exactly that form through while
+  // catching the bare assignment on the next line. Fixed-length strings (As String * 10) are
+  // allowed for completeness.
+  /((?:Password|Pwd|ApiKey|Api_Key|SecretKey|Secret|Token|AccessKey|ClientSecret)(?:\s+As\s+[A-Za-z_][A-Za-z0-9_.]*(?:\s*\*\s*\d+)?)?\s*=\s*")([^"]*)(")/gi,
   // Credential embedded inside a larger string (e.g. an ADODB connection string), terminated
   // by ; or the closing quote rather than being its own VBA assignment statement. The
   // terminator is captured (not just look-ahead) so every pattern here has the same

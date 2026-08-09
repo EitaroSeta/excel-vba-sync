@@ -427,7 +427,7 @@ function AnalyzeProcedure {
     }
     $usedIds.Add($id) | Out-Null
 
-    $cleanText = $cleanText -replace '(?i)((?:Password|Pwd|ApiKey|Api_Key|SecretKey|Secret|Token|AccessKey|ClientSecret)\s*=\s*")[^"]*(")', '$1[REDACTED]$2'
+    $cleanText = $cleanText -replace '(?i)((?:Password|Pwd|ApiKey|Api_Key|SecretKey|Secret|Token|AccessKey|ClientSecret)(?:\s+As\s+[A-Za-z_][A-Za-z0-9_.]*(?:\s*\*\s*\d+)?)?\s*=\s*")[^"]*(")', '$1[REDACTED]$2'
     $cleanText = $cleanText -replace '(?i)((?:Password|Pwd)\s*=\s*)[^;"\s][^;"]*([;"])', '$1[REDACTED]$2'
     $cleanText = $cleanText -replace '(?i)(setRequestHeader\s*\(?\s*"Authorization"\s*,\s*")[^"]*(")', '$1[REDACTED]$2'
     $cleanText = $cleanText -replace '(?i)(Authorization\s*[:=]\s*")[^"]*(")', '$1[REDACTED]$2'

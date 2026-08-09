@@ -15,6 +15,45 @@ test("redacts a direct assignment to a credential-shaped identifier", () => {
   assert.equal(redactSecrets('Const SECRET = "topsecret"'), 'Const SECRET = "[REDACTED]"');
 });
 
+// A declaration-with-initializer is the most natural way to hardcode a credential in VBA,
+// and it was slipping through: the pattern required '=' to follow the identifier directly,
+// so the bare assignment was caught but "Const API_KEY As String = ..." was not.
+test("redacts a declaration that carries an As-clause before the assignment", () => {
+  assert.equal(
+    redactSecrets('Const API_KEY As String = "sk-abc123"'),
+    'Const API_KEY As String = "[REDACTED]"'
+  );
+  assert.equal(
+    redactSecrets('Private Const SECRET As String = "topsecret"'),
+    'Private Const SECRET As String = "[REDACTED]"'
+  );
+  // Fixed-length string form, allowed by the pattern for completeness.
+  assert.equal(
+    redactSecrets('Dim thePassword As String * 8 = "hunter2"'),
+    'Dim thePassword As String * 8 = "[REDACTED]"'
+  );
+});
+
+test("still redacts a later assignment when an earlier As-clause does not lead to one", () => {
+  // The optional As-clause must not strand the match on the first identifier: here the
+  // declaration has no initializer and the real assignment comes after the colon.
+  assert.equal(
+    redactSecrets('Dim apiKey As String: apiKey = "sk-abc123"'),
+    'Dim apiKey As String: apiKey = "[REDACTED]"'
+  );
+  // Declaration alone carries no value, so there is nothing to mask.
+  assert.equal(redactSecrets("Dim clientSecret As String"), "Dim clientSecret As String");
+});
+
+test("an As-clause declaration is not corrupted by the connection-string pattern", () => {
+  // Pattern order regression guard: the Password/Pwd connection-string pattern runs after
+  // this one and must not re-match text that was already replaced.
+  assert.equal(
+    redactSecrets('Const PWD As String = "hunter2"'),
+    'Const PWD As String = "[REDACTED]"'
+  );
+});
+
 test("is case-insensitive", () => {
   assert.equal(redactSecrets('password = "hunter2"'), 'password = "[REDACTED]"');
   assert.equal(redactSecrets('PASSWORD = "hunter2"'), 'PASSWORD = "[REDACTED]"');

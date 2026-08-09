@@ -11,6 +11,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.78] - 2026-08-09
+### ### Fixed
+- Credential redaction missed the most natural way to hardcode a secret in VBA: a declaration with an initializer. `apiKey = "sk-..."` was masked, but `Const API_KEY As String = "sk-..."` went through untouched, because the pattern required the `=` to follow the credential keyword directly and `As String` sits in between. Both the TypeScript implementation (every MCP tool) and the PowerShell one (flowcharts) now allow an optional `As <Type>` clause, including the fixed-length `As String * 8` form.
+- Found by building two sample modules to hand-verify the v0.0.77 flowchart fix, then testing the boundary the regex implied rather than assuming it held. Of the three forms tried, one leaked. This was never flowchart-specific -- it had been true of `excel_get_module_code`, `vba_search_code` and every other redacting tool since redaction was introduced in v0.0.72.
+- The opposite limit is left as-is and is now documented as deliberate: the patterns have no word boundary, so a harmless variable whose name merely ends in a keyword (`csrfToken = "..."`) is also masked. Hiding a non-secret is the cheaper mistake of the two.
+- Three regression tests added, including one guarding against the optional `As` clause stranding the match on a declaration that has no initializer when the real assignment follows on the same line (`Dim apiKey As String: apiKey = "..."`), and one confirming the pattern-ordering constraint still holds afterwards. Unit tests: 48 -> 51.
+
 ## [0.0.77] - 2026-08-09
 ### ### Fixed
 - Closed the credential-masking gap left open in v0.0.72: `vba_analyze_flow` and `vba_render_flowchart` were the only tools still returning source text unmasked. Investigating it showed the exposure was **wider than v0.0.72's own notes claimed** -- that entry described it as "condition expressions and Err.Raise arguments", but ordinary statements become `op`/`call`/`end` nodes carrying the **entire trimmed source line**, so a secret sitting on any statement inside an analyzed procedure was reaching the model. Every other tool masked it; these two did not.
