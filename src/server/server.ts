@@ -50,17 +50,17 @@ server.tool("ping", "Health check for the excel-vba-sync MCP server. Returns the
 const transport = new StdioServerTransport();
 server.connect(transport);
 
-// •¶š—ñ‚Ì ' ‚ğƒGƒXƒP[ƒv
+// æ–‡å­—åˆ—ã® ' ã‚’ã‚¨ã‚¹ã‚±ãƒ¼ãƒ—
 function psq(s: string) { return s.replace(/'/g, "''"); }
 
-// scripts/ ƒtƒHƒ‹ƒ_‚Ìâ‘ÎƒpƒXiMCP_SCRIPTS_DIR—DæA–³‚¯‚ê‚Î MCP_PS_LIST ‚©‚ç‹tZj
+// scripts/ ãƒ•ã‚©ãƒ«ãƒ€ã®çµ¶å¯¾ãƒ‘ã‚¹ï¼ˆMCP_SCRIPTS_DIRå„ªå…ˆã€ç„¡ã‘ã‚Œã° MCP_PS_LIST ã‹ã‚‰é€†ç®—ï¼‰
 function getScriptsDir(): string | undefined {
   if (process.env.MCP_SCRIPTS_DIR) { return process.env.MCP_SCRIPTS_DIR; }
   if (process.env.MCP_PS_LIST) { return path.dirname(process.env.MCP_PS_LIST); }
   return undefined;
 }
 
-// ExcelUtil.ps1 ‚ğ dot-source ‚·‚és‚ğ¶¬iŒ©‚Â‚©‚ç‚È‚¢ê‡‚Í‹ó•¶šƒXƒLƒbƒvj
+// ExcelUtil.ps1 ã‚’ dot-source ã™ã‚‹è¡Œã‚’ç”Ÿæˆï¼ˆè¦‹ã¤ã‹ã‚‰ãªã„å ´åˆã¯ç©ºæ–‡å­—ï¼ã‚¹ã‚­ãƒƒãƒ—ï¼‰
 function dotSourceExcelUtil(): string {
   const dir = getScriptsDir();
   if (!dir) { return ""; }
@@ -73,9 +73,9 @@ function dotSourceExcelUtil(): string {
 // so their branching logic can be covered by the persistent node:test suite.
 
 
-// execFileAsync‚ª”ñƒ[ƒI—¹ƒR[ƒh‚Å¸”s‚µ‚½ê‡‚Å‚àAe.stdout ‚ÉÀÛ‚ÌJSONo—Í
-// i—á: {ok:false, error:"macro not found", ...}j‚ªc‚Á‚Ä‚¢‚é‚±‚Æ‚ª‘½‚¢‚½‚ßA
-// "ps failed" ‚Æ‚¢‚¤”Ä—pƒƒbƒZ[ƒW‚ÅÀÛ‚ÌƒGƒ‰[“à—e‚ğˆ¬‚è‚Â‚Ô‚³‚È‚¢‚æ‚¤‚É‚·‚é
+// execFileAsyncãŒéã‚¼ãƒ­çµ‚äº†ã‚³ãƒ¼ãƒ‰ã§å¤±æ•—ã—ãŸå ´åˆã§ã‚‚ã€e.stdout ã«å®Ÿéš›ã®JSONå‡ºåŠ›
+// ï¼ˆä¾‹: {ok:false, error:"macro not found", ...}ï¼‰ãŒæ®‹ã£ã¦ã„ã‚‹ã“ã¨ãŒå¤šã„ãŸã‚ã€
+// "ps failed" ã¨ã„ã†æ±ç”¨ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã§å®Ÿéš›ã®ã‚¨ãƒ©ãƒ¼å†…å®¹ã‚’æ¡ã‚Šã¤ã¶ã•ãªã„ã‚ˆã†ã«ã™ã‚‹
 function extractFailureResult(e: any): { content: { type: "text"; text: string }[]; isError: boolean } {
   const stdout = e?.stdout;
   if (stdout) {
@@ -88,7 +88,7 @@ function extractFailureResult(e: any): { content: { type: "text"; text: string }
   return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "ps_failed", detail: String(e?.message ?? e) }) }], isError: true };
 }
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_get_module_code ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_get_module_code â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "excel_get_module_code",
   "Read the full source code of a VBA module (all Sub/Function bodies as VBE would show them; module- and procedure-level Attribute lines, e.g. macro shortcut key bindings, are NOT included -- this reads via CodeModule.Lines()). If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open. Fails with ERR_VBOM_TRUST_DISABLED if Excel's 'Trust access to the VBA project object model' setting is off (cannot be enabled programmatically). Values that look like a hardcoded password/API key/Authorization header are automatically masked as [REDACTED] before this is returned -- always on, no way to disable it, and best-effort only (a secret with no recognizable keyword nearby will not be caught).",
@@ -103,7 +103,7 @@ server.tool(
     const wbPath = psq(params.workbookPath ?? "");
     const dotSource = dotSourceExcelUtil();
 
-    // PowerShell ƒƒ“ƒ‰ƒCƒi[‚Å COM Œo—Ræ“¾
+    // PowerShell ãƒ¯ãƒ³ãƒ©ã‚¤ãƒŠãƒ¼ã§ COM çµŒç”±å–å¾—
     const psScript = `
 $ErrorActionPreference='Stop'
 # --- Force UTF-8 output (no BOM) ---
@@ -220,7 +220,7 @@ try {
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_worksheets ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_list_worksheets â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "excel_list_worksheets",
   "List the actual worksheets in a workbook (display name, VBA CodeName, index, visibility) -- NOT the VBA code modules (use excel_list_modules for those). A worksheet has two distinct names: its display name (what Worksheets('...') string lookups use, renamable by the user) and its CodeName (what direct Sheet1.Range(...) references use, fixed at creation, and what shows up as the module name for componentType 100 entries in excel_list_modules). Use this before generating VBA code that references a sheet by name, to confirm the exact spelling exists -- a mismatch fails at RUNTIME, not at write time, and there is no other way to detect that in advance. If the expected sheet is not found, do not attempt to create or rename one via VBA code or any other means -- report this to the user so they can create/rename it manually in Excel. Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Worksheets), not VBProject.",
@@ -282,7 +282,7 @@ try {
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_defined_names ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_list_defined_names â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "excel_list_defined_names",
   "List the actual defined names (named ranges) in a workbook -- both workbook-scoped and sheet-scoped, via the Names collection. Use this before generating VBA code that references a named range (e.g. Range('MyNamedRange')), since there is no other way to confirm it actually exists: vba_list_references only reports likely named-range REFERENCES found inside existing VBA code text via regex, not the workbook's actual Names collection. Each entry includes refersTo (the underlying cell/formula reference) and isBroken (true if refersTo contains #REF!, meaning the name points at something that was deleted -- a real, silently-broken name was found in this project's own test workbook during development). If the expected name is not found, do not attempt to create one via VBA code or any other means -- report this to the user so they can define it manually (Formulas > Name Manager). Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Names), not VBProject.",
@@ -347,7 +347,7 @@ try {
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_form_controls ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_list_form_controls â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "excel_list_form_controls",
   "List the controls (textboxes, buttons, labels, etc.) inside one or every UserForm in a workbook's VBA project -- name and type only, not layout/position. Use this before generating VBA code that references a form control by name (e.g. UserForm1.TextBox1), since there is no other way to confirm a control actually exists: excel_get_module_code only returns the form's event-handler code, not its designer-time control layout (that lives in the binary .frm/.frx data). If the expected form or control is not found, do not attempt to create one via VBA code or any other means -- report this to the user so they can add it manually via the VBE form designer. type is normalized to the familiar VBA name (Label/ComboBox/OptionButton/Image) for the control types confirmed so far; for any other control type, the raw internal COM interface name is returned instead (e.g. something like IMdcListBox) since late-bound automation cannot see the same friendly name VBA's own TypeName() shows -- treat an unrecognized-looking type string as still probably correct in substance, just not normalized yet. Requires the VBA Trust Center setting (same as excel_list_modules).",
@@ -441,7 +441,7 @@ try {
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_macros ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_list_macros â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "excel_read_range",
   "Read cell values from a range in an Excel worksheet -- e.g. to verify what excel_run_macro actually did to the spreadsheet, since that tool alone cannot confirm the macro's effect. Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Range/Worksheet), not VBProject. Returns a row-major 2D array of values using Range.Value2 (avoids the Date/Currency wrapping that Range.Value can introduce). Large ranges (e.g. whole columns/rows) can be slow -- prefer a bounded address like 'A1:C10'. If the workbook is already open in Excel, 'workbook' (its display name) is enough. Otherwise pass 'workbookPath' (full file path): Excel will be launched if not running, and the file opened if not already open.",
@@ -519,7 +519,7 @@ try {
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_formulas ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_list_formulas â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "excel_list_formulas",
   "List the actual formulas present in a worksheet's cells (or a bounded range within it) -- e.g. VLOOKUP/INDEX-MATCH/conditional logic that further processes a macro's output into what a human actually sees. This is a common migration blind spot: excel_read_range only returns computed VALUES (Range.Value2), not the underlying formula text, and vba_list_references only detects likely Range(...) references inside VBA CODE text via regex -- neither can tell you a cell actually contains a formula at all. Cells are grouped by their FormulaR1C1 representation (Excel's own position-independent form of a formula, where relative references are expressed relative to the cell rather than as absolute row/column numbers) so that a formula filled down across many rows (e.g. the same VLOOKUP repeated in B2:B10000) collapses into ONE group with a cellCount, instead of returning thousands of near-duplicate entries -- read cellCount as 'this many cells share this exact relative pattern', not as thousands of independent formulas to review one by one. Each group's exampleFormula is in ordinary A1 style (e.g. '=VLOOKUP(A2,Sheet2!A:B,2,FALSE)') for readability; addresses lists up to 20 of the matching cells (addressesTruncated:true if there are more). A sheet or range with no formulas at all returns an empty formulaGroups array, not an error. Does NOT require the VBA Trust Center setting (unlike the VBA code tools): this only touches the normal Excel object model (Worksheet/Range), not VBProject.",
@@ -627,7 +627,7 @@ try {
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_conditional_formats ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_list_conditional_formats â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "excel_list_conditional_formats",
   "List conditional formatting rules actually present in a worksheet's cells (or a bounded range within it) -- another common migration blind spot alongside excel_list_formulas: a cell's displayed color/style can depend on rule logic (e.g. 'red if negative') that never appears anywhere in VBA code or in the cell's own formula. Cells are grouped by (type, operator, and the rule's Formula1/Formula2 normalized to a position-independent form via Application.ConvertFormula, mirroring how excel_list_formulas uses Range.FormulaR1C1) so a rule applied down many rows collapses into one group with a cellCount, instead of one entry per cell. type/operator are normalized to readable names for the values confirmed so far (CellValue/Expression/ColorScale/DataBar/Top10/IconSet/UniqueValues/TextString/Blanks/TimePeriod/AboveAverage/NoBlanks/Errors/NoErrors for type; Between/NotBetween/Equal/NotEqual/Greater/Less/GreaterEqual/LessEqual for operator) -- an unrecognized type/operator is returned as its raw numeric value rather than guessed, and is still correct data, just not named yet. A sheet or range with no conditional formatting returns an empty formatGroups array, not an error. Does NOT require the VBA Trust Center setting: this only touches the normal Excel object model (Worksheet/Range/FormatConditions), not VBProject.",
@@ -773,7 +773,7 @@ try {
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_list_data_validations ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_list_data_validations â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "excel_list_data_validations",
   "List data validation rules actually present in a worksheet's cells (or a bounded range within it) -- the same kind of migration blind spot as excel_list_formulas/excel_list_conditional_formats, but for input constraints: a cell that only accepts values from a dropdown list, a whole-number range, a date range, etc. never shows that constraint in VBA code or in the cell's own formula. For type 'List', exampleFormula1 IS the dropdown's source -- either a literal comma-separated string (e.g. 'Yes,No,Maybe') or a range reference (e.g. '=$D$1:$D$5') -- this is exactly how to discover a dropdown's actual choices. Cells are grouped the same way as excel_list_conditional_formats (by type, operator, and Formula1/Formula2 normalized via Application.ConvertFormula to a position-independent form), so the same rule applied down many rows collapses into one group with a cellCount. type/operator are normalized to readable names for the values confirmed so far (InputOnly/WholeNumber/Decimal/List/Date/Time/TextLength/Custom for type; Between/NotBetween/Equal/NotEqual/Greater/Less/GreaterEqual/LessEqual for operator) -- an unrecognized value is returned as its raw number rather than guessed, and is still correct data, just not named yet. A sheet or range with no data validation returns an empty validationGroups array, not an error. Does NOT require the VBA Trust Center setting: this only touches the normal Excel object model (Worksheet/Range/Validation), not VBProject.",
@@ -958,9 +958,9 @@ server.tool(
     try {
       const { stdout } = await execFileAsync("powershell.exe", args, {
         windowsHide: true,
-        encoding: "buffer",      // Buffer ‚Åó‚¯æ‚Á‚Ä‚©‚ç UTF-8 ‚É•ÏŠ·
-        cwd: path.dirname(ps),   // ps1 ‚Ì‚ ‚éƒtƒHƒ‹ƒ_‚ğƒJƒŒƒ“ƒg‚É
-        timeout: 20000,          // š 20 •b‚Å‹­§I—¹
+        encoding: "buffer",      // Buffer ã§å—ã‘å–ã£ã¦ã‹ã‚‰ UTF-8 ã«å¤‰æ›
+        cwd: path.dirname(ps),   // ps1 ã®ã‚ã‚‹ãƒ•ã‚©ãƒ«ãƒ€ã‚’ã‚«ãƒ¬ãƒ³ãƒˆã«
+        timeout: 20000,          // â˜… 20 ç§’ã§å¼·åˆ¶çµ‚äº†
         maxBuffer: 2 * 1024 * 1024
       });
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
@@ -971,7 +971,7 @@ server.tool(
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_run_macros ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_run_macros â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "excel_run_macro",
   "Run a VBA macro via Application.Run. WARNING: if the macro shows a dialog (MsgBox, InputBox) or a UserForm, or otherwise waits for user interaction, this call will hang until timeoutMs is reached; the timeout only stops this tool's own wait -- it does NOT close the dialog or unstick Excel, so check Excel directly afterward if you hit ERR_TIMEOUT. IMPORTANT: a successful response only means Application.Run completed without throwing an exception -- it does NOT confirm the macro did the intended thing (cell writes, files written, etc. are not verified by this tool). Prefer excel_list_macros first to get an exact 'qualified' name rather than guessing moduleName/procName.",
@@ -995,7 +995,7 @@ server.tool(
       return { content: [{ type: "text", text: JSON.stringify({ error: `ps1 not found: ${ps}` }) }] };
     }
 
-    // © ‚±‚±‚ªƒ|ƒCƒ“ƒgFˆê“x‚¾‚¯éŒ¾‚µ‚Ä‚©‚ç push ‚·‚é
+    // â† ã“ã“ãŒãƒã‚¤ãƒ³ãƒˆï¼šä¸€åº¦ã ã‘å®£è¨€ã—ã¦ã‹ã‚‰ push ã™ã‚‹
     let args: string[] = [
       "-NoLogo",
       "-NoProfile",
@@ -1006,7 +1006,7 @@ server.tool(
     ];
 
     if (params.qualified && params.qualified.trim().length > 0) {
-      // Š®‘SCü‚ª—ˆ‚½‚çÅ—Dæi.ps1 ‘¤‚É -Qualified ‘Î‰‚ğÀ‘•Ï‚İ‚Å‚ ‚é‚±‚Æj
+      // å®Œå…¨ä¿®é£¾ãŒæ¥ãŸã‚‰æœ€å„ªå…ˆï¼ˆ.ps1 å´ã« -Qualified å¯¾å¿œã‚’å®Ÿè£…æ¸ˆã¿ã§ã‚ã‚‹ã“ã¨ï¼‰
       args.push("-Qualified", params.qualified);
 
     } else {
@@ -1044,8 +1044,8 @@ server.tool(
       const outText  = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
       return classifyResult(outText);
     } catch (e: any) {
-      // execFileAsync‚Ìtimeout‚Å‹­§I—¹‚³‚ê‚½ê‡B‚½‚¾‚µ‚±‚¿‚ç‘¤‚ÌPowerShellƒvƒƒZƒX‚ğ
-      // ~‚ß‚é‚¾‚¯‚ÅAExcel©‘Ì‚âƒ_ƒCƒAƒƒO‚Å~‚Ü‚Á‚Ä‚¢‚éó‘Ô‚Í‰ğÁ‚³‚ê‚È‚¢“_‚É’ˆÓB
+      // execFileAsyncã®timeoutã§å¼·åˆ¶çµ‚äº†ã•ã‚ŒãŸå ´åˆã€‚ãŸã ã—ã“ã¡ã‚‰å´ã®PowerShellãƒ—ãƒ­ã‚»ã‚¹ã‚’
+      // æ­¢ã‚ã‚‹ã ã‘ã§ã€Excelè‡ªä½“ã‚„ãƒ€ã‚¤ã‚¢ãƒ­ã‚°ã§æ­¢ã¾ã£ã¦ã„ã‚‹çŠ¶æ…‹ã¯è§£æ¶ˆã•ã‚Œãªã„ç‚¹ã«æ³¨æ„ã€‚
       if (e?.killed) {
         return {
           content: [{ type: "text", text: JSON.stringify({
@@ -1061,7 +1061,7 @@ server.tool(
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ vba_search_code ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  vba_search_code â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
 server.tool(
   "vba_search_code",
   "Search VBA source code for a literal string or regex across all currently open workbooks (or one specific workbook via workbookPath / workbookFilter). Returns matching LINES with context (workbook/module/proc/line number), not full module code -- use excel_get_module_code to read a whole module. Results are capped at maxResults (default 50); if there were more matches, the response sets truncated:true and totalMatchCount so you know to narrow the query rather than assuming there were no more hits. Values that look like a hardcoded password/API key/Authorization header within a matched snippet are automatically masked as [REDACTED] -- always on, best-effort only.",
@@ -1074,9 +1074,9 @@ server.tool(
     maxResults: z.number().optional().describe("Maximum number of hits to return in one call. Default 50. Excess hits are dropped, with truncated:true and totalMatchCount reported instead."),
   },
   async (params) => {
-    // PowerShellƒƒ“ƒ‰ƒCƒi[‚ÅŠJ‚¢‚Ä‚¢‚é‘SƒuƒbƒN‚Ì‘Sƒ‚ƒWƒ…[ƒ‹‚ğ‘–¸
-    // ETrustOM •K{iVBAƒvƒƒWƒFƒNƒgOM‚Ö‚ÌƒAƒNƒZƒX‚ğM—Šj
-    // E‘SƒRƒ“ƒ|[ƒlƒ“ƒgí•Ê‚ğ‘ÎÛ vbext_ct_StdModule(1), Class(2), Document(100)
+    // PowerShellãƒ¯ãƒ³ãƒ©ã‚¤ãƒŠãƒ¼ã§é–‹ã„ã¦ã„ã‚‹å…¨ãƒ–ãƒƒã‚¯ã®å…¨ãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«ã‚’èµ°æŸ»
+    // ãƒ»TrustOM å¿…é ˆï¼ˆVBAãƒ—ãƒ­ã‚¸ã‚§ã‚¯ãƒˆOMã¸ã®ã‚¢ã‚¯ã‚»ã‚¹ã‚’ä¿¡é ¼ï¼‰
+    // ãƒ»å…¨ã‚³ãƒ³ãƒãƒ¼ãƒãƒ³ãƒˆç¨®åˆ¥ã‚’å¯¾è±¡ vbext_ct_StdModule(1), Class(2), Document(100)
     const wbPath = psq(params.workbookPath ?? "");
     const maxResults = params.maxResults ?? 50;
     const dotSource = dotSourceExcelUtil();
@@ -1095,7 +1095,7 @@ try{
   Write-Output (@{ ok=$false; error='excel_not_found' } | ConvertTo-Json); exit
 }
 
-# workbookPathw’è‚ÍA–¢ƒI[ƒvƒ“‚È‚ç©“®‚ÅŠJ‚­i‘ÎÛ‚ğ–¾¦ŒŸõ‘ÎÛ‚ÉŠÜ‚ß‚é‚½‚ßj
+# workbookPathæŒ‡å®šæ™‚ã¯ã€æœªã‚ªãƒ¼ãƒ—ãƒ³ãªã‚‰è‡ªå‹•ã§é–‹ãï¼ˆå¯¾è±¡ã‚’æ˜ç¤ºæ¤œç´¢å¯¾è±¡ã«å«ã‚ã‚‹ãŸã‚ï¼‰
 $workbookPathParam = '${wbPath}'
 if ($workbookPathParam -and $workbookPathParam.Trim().Length -gt 0) {
   try {
@@ -1112,16 +1112,16 @@ $useRe=${params.useRegex ? '$true' : '$false'}
 $moduleFilter=${params.moduleFilter ? `'${params.moduleFilter.replace(/'/g,"''")}'` : '$null'}
 $workbookFilter=${params.workbookFilter ? `'${params.workbookFilter.replace(/'/g,"''")}'` : '$null'}
 
-# ‘å•¶š¬•¶š–³‹‚Ì‚½‚ß (?i) ‚ğ‘O’u
+# å¤§æ–‡å­—å°æ–‡å­—ç„¡è¦–ã®ãŸã‚ (?i) ã‚’å‰ç½®
 if($useRe){ $re='(?i)'+$reRaw } else { $re=[regex]::Escape($reRaw); $re='(?i)'+$re }
-$rx = [regex]::new($re)  # š –‘OƒRƒ“ƒpƒCƒ‹
+$rx = [regex]::new($re)  # â˜… äº‹å‰ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«
 
 foreach($wb in @($excel.Workbooks)){
   if($workbookFilter -and $wb.Name -ne $workbookFilter){ continue }
   try{ $vbp=$wb.VBProject }catch{ continue }
 
   foreach($c in @($vbp.VBComponents)){
-    # í•ÊƒtƒBƒ‹ƒ^•s—vF‘S•”‘ÎÛ
+    # ç¨®åˆ¥ãƒ•ã‚£ãƒ«ã‚¿ä¸è¦ï¼šå…¨éƒ¨å¯¾è±¡
     $modName=$c.Name
     if($moduleFilter -and $modName -ne $moduleFilter){ continue }
     try{
@@ -1130,12 +1130,12 @@ foreach($wb in @($excel.Workbooks)){
       #$procKind = $null
       #$procName = $null
 
-      # ‘–¸ƒ‹[ƒv“à‚Ìƒqƒbƒg¶¬•”‚ğ’uŠ·
+      # èµ°æŸ»ãƒ«ãƒ¼ãƒ—å†…ã®ãƒ’ãƒƒãƒˆç”Ÿæˆéƒ¨ã‚’ç½®æ›
       $vbType = $c.Type   # 1:StdModule, 2:Class, 3:MSForm, 100:Document(Worksheet/ThisWorkbook)
       $ext = switch ($vbType) {
-        1 { 'bas' }      # •W€ƒ‚ƒWƒ…[ƒ‹
-        3 { 'frm' }      # ƒ†[ƒU[ƒtƒH[ƒ€i.frm + .frxj
-        default { 'cls' }# ƒNƒ‰ƒX/ƒV[ƒg/ThisWorkbook ‚Í .cls
+        1 { 'bas' }      # æ¨™æº–ãƒ¢ã‚¸ãƒ¥ãƒ¼ãƒ«
+        3 { 'frm' }      # ãƒ¦ãƒ¼ã‚¶ãƒ¼ãƒ•ã‚©ãƒ¼ãƒ ï¼ˆ.frm + .frxï¼‰
+        default { 'cls' }# ã‚¯ãƒ©ã‚¹/ã‚·ãƒ¼ãƒˆ/ThisWorkbook ã¯ .cls
       }
       $text=$cm.Lines(1,$cm.CountOfLines)
       $i=0
@@ -1177,7 +1177,7 @@ foreach($wb in @($excel.Workbooks)){
             proc      = $procName
             line      = $i
             snippet   = $line.Trim()
-            qualified = if ($procName) { "'$($wb.Name)'!$modName.$procName" } else { "'$($wb.Name)'!$modName" }  # š C³
+            qualified = if ($procName) { "'$($wb.Name)'!$modName.$procName" } else { "'$($wb.Name)'!$modName" }  # â˜… ä¿®æ­£
             compType  = $vbType
             exportExt = $ext                 
             }
@@ -1901,11 +1901,11 @@ server.tool(
   }
 );
 
-// ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡ excel_update_module_code ¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡¡
-// dry-runiƒvƒŒƒrƒ…[j¨ confirmToken•t‚«ŒÄ‚Ño‚µiÀ‘‚«‚İj‚Ì2’iŠKƒtƒ[B
-// ÀÛ‚Ì‘‚«‚İ‚Í import_single_module.ps1 Œo—Ri= import_opened_vba.ps1 ‚Ì
-// VBComponents.Import()ƒx[ƒX‚ÌƒƒWƒbƒN‚ğÄ—˜—pj‚Ås‚¢ACodeModule.AddFromString()‚ğ
-// ’¼ÚŒÄ‚Ô‚±‚Æ‚Íâ‘Î‚És‚í‚È‚¢iAttributes‚ğŠÜ‚ŞƒR[ƒh‚ÅƒRƒ“ƒpƒCƒ‹ƒGƒ‰[‚É‚È‚é‚½‚ßjB
+// â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â–  excel_update_module_code â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– â– 
+// dry-runï¼ˆãƒ—ãƒ¬ãƒ“ãƒ¥ãƒ¼ï¼‰â†’ confirmTokenä»˜ãå‘¼ã³å‡ºã—ï¼ˆå®Ÿæ›¸ãè¾¼ã¿ï¼‰ã®2æ®µéšãƒ•ãƒ­ãƒ¼ã€‚
+// å®Ÿéš›ã®æ›¸ãè¾¼ã¿ã¯ import_single_module.ps1 çµŒç”±ï¼ˆ= import_opened_vba.ps1 ã®
+// VBComponents.Import()ãƒ™ãƒ¼ã‚¹ã®ãƒ­ã‚¸ãƒƒã‚¯ã‚’å†åˆ©ç”¨ï¼‰ã§è¡Œã„ã€CodeModule.AddFromString()ã‚’
+// ç›´æ¥å‘¼ã¶ã“ã¨ã¯çµ¶å¯¾ã«è¡Œã‚ãªã„ï¼ˆAttributeè¡Œã‚’å«ã‚€ã‚³ãƒ¼ãƒ‰ã§ã‚³ãƒ³ãƒ‘ã‚¤ãƒ«ã‚¨ãƒ©ãƒ¼ã«ãªã‚‹ãŸã‚ï¼‰ã€‚
 function computeConfirmToken(module: string, currentCode: string, newCode: string): string {
   return createHash("sha256").update(`${module}\u0000${currentCode}\u0000${newCode}`).digest("hex").slice(0, 16);
 }
