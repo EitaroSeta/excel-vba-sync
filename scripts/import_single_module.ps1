@@ -99,9 +99,6 @@ try {
 
 # vbext_ComponentType: 1=StdModule, 2=Class, 3=MSForm, 100=Document(Sheet/ThisWorkbook)
 $compType = $targetComp.Type
-if ($compType -eq 3) {
-    Write-ResultAndExit @{ ok = $false; error = "ERR_UNSUPPORTED_MODULE_TYPE"; detail = "UserForm(.frm) modules are not supported by excel_update_module_code (requires paired .frx binary data)." } 1
-}
 
 # 書き込み前に、現在のコードをタイムスタンプ付きでバックアップする（復元用の保険）
 # 注意: CodeModule.Lines() はAttribute行を含まないため、バックアップもテキスト内容のみの復元用となる
@@ -115,12 +112,32 @@ try {
     } else {
         $currentCode = ""
     }
-    $backupExt = if ($compType -eq 2 -or $compType -eq 100) { ".cls" } else { ".bas" }
+    $backupExt = if ($compType -eq 2 -or $compType -eq 100) { ".cls" } elseif ($compType -eq 3) { ".frm" } else { ".bas" }
     $backupPath = Join-Path $backupDir ("{0}_{1}{2}" -f $ModuleName, $ts, $backupExt)
     [System.IO.File]::WriteAllText($backupPath, $currentCode, (New-Object System.Text.UTF8Encoding($false)))
 } catch {
     # バックアップ失敗は書き込み処理自体を止めない（ベストエフォート）
     $backupPath = $null
+}
+
+# --- UserForm(Type=3)のコード上書き ---
+# Designer側（コントロールの配置・サイズ、.frxバイナリ）には一切触れず、CodeModuleのコード
+# だけを差し替える。Documentモジュール(Type=100)と同じDeleteLines+AddFromString経路。
+# VBComponents.Import()を使う既存経路（.frm/.frxのペアが必要）は通さないため、ここで完結させる。
+# 実機で確認済み: この経路でもDesignerのコントロール群と、モジュールレベルのAttribute行
+# （VB_PredeclaredId=True等、UserFormの既定インスタンスに必須）は保持される。
+# なおUserFormにはプロシージャレベルのAttribute行（ショートカットキー割り当て）が
+# そもそも存在しないため、Documentモジュールのようなショートカット消失の警告は不要。
+if ($compType -eq 3) {
+    $formSourceText = Get-Content -LiteralPath $SourceCodePath -Raw -Encoding UTF8
+    try {
+        $formCm = $targetComp.CodeModule
+        if ($formCm.CountOfLines -gt 0) { $formCm.DeleteLines(1, $formCm.CountOfLines) }
+        $formCm.AddFromString($formSourceText)
+    } catch {
+        Write-ResultAndExit @{ ok = $false; error = "import_failed"; module = $ModuleName; workbook = $wb.Name; backupPath = $backupPath; detail = "$($_.Exception.Message)" } 1
+    }
+    Write-ResultAndExit @{ ok = $true; workbook = $wb.Name; module = $ModuleName; componentType = $compType; backupPath = $backupPath } 0
 }
 
 # 対象ワークブック名フォルダ配下に、対象拡張子でコードを配置する
