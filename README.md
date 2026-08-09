@@ -218,6 +218,11 @@ See **[docs/AI_USAGE.md](docs/AI_USAGE.md)** for setup steps, safety design, and
 >これは Excel 側が一時的に応答できない状態にあるため、COM 呼び出しが失敗して発生するエラーです。  
 この場合は **Excelを再起動**すると解消されます。
 
+**●セキュリティ製品（アンチウイルス／EDR）にブロックされる場合があります**
+>この拡張機能は「PowerShell経由でExcelのVBAプロジェクトを読み書きする」という動作をします。これは**マクロ型マルウェアが行う操作と原理的に同じ**であるため、環境によってはアンチウイルスやEDRが動作をブロックしたり警告を出したりする可能性があります（特に企業環境でDefenderのASR〈攻撃対象領域の縮小〉ルールが有効な場合）。
+>
+>そもそもVBAプロジェクトへのアクセスには、Trust Centerの「VBAプロジェクトオブジェクトモデルへのアクセスを信頼する」を**利用者が明示的に有効化する必要があります**（既定は無効）。この設定が既定でオフなのは、ここがマルウェアの侵入経路になりうるためです。本拡張機能は、利用者自身の判断でそのゲートを開けた上で使うことを前提としています。ブロックされた場合に除外設定を入れるかどうかも、利用者自身のリスク判断に委ねられます。
+
 **●Do **not** edit attributes of exported files**
 > Do **not edit the attribute lines** in exported **`.frm/.cls/.bas`** files. Changing `VERSION`, `Begin … End`, `Object = …`, or any `Attribute VB_*` (e.g., `VB_Name`, `VB_PredeclaredId`, `VB_Exposed`, `VB_Creatable`) can cause **import failures**,  and **loss of linkage** to the original form.  
 
@@ -230,6 +235,11 @@ you may encounter the following error:
 `STDERR: Call was rejected by callee. (HRESULT 0x80010001)`  
 >This occurs because Excel is temporarily unable to respond, causing the COM call to fail.  
 **Restarting Excel** will resolve the issue.
+
+**●Security software (antivirus / EDR) may block this extension**
+>This extension reads and writes a workbook's VBA project through PowerShell — **fundamentally the same operation macro malware performs**. Depending on your environment, antivirus or EDR software may block it or raise warnings (particularly in managed environments where Defender's ASR — Attack Surface Reduction — rules are enabled).
+>
+>Note that accessing the VBA project already requires you to **explicitly enable** "Trust access to the VBA project object model" in the Trust Center (it is off by default). That setting is off by default precisely because it is a malware entry point; this extension assumes you have opened that gate as your own deliberate decision. Likewise, whether to add an antivirus exclusion if you are blocked is your own risk decision to make.
 
 ### 免責事項 / Disclaimer
 本拡張機能は現状有姿（as-is）で提供されます。MCPサーバー経由でAIエージェントが行った操作を含め、本拡張機能の使用によって生じたExcelファイルの破損・データ損失・その他いかなる損害についても、作者は一切の責任を負いません。自己責任でご利用の上、必ず事前にバックアップを取得してください。
