@@ -12,6 +12,7 @@ import { scanModuleForReferences, ModuleReferenceScan } from "./referenceScan.js
 import { scanModuleForVariableScopes, ModuleVariableScopeScan, resolveVariableUsages } from "./variableScopeScan.js";
 import { findCrossModuleDuplicates, CrossModuleDuplicate } from "./duplicateProcedureScan.js";
 import { redactSecrets, redactCodeText } from "./secretRedaction.js";
+import { classifyResult, classifyResultWithRedaction } from "./responseClassification.js";
 const execFileAsyncRaw = promisify(execFile);
 // Serializes all Excel-COM-touching PowerShell invocations so concurrent MCP tool
 // calls (e.g. an agent firing off excel_list_modules/excel_list_macros/excel_read_range
@@ -68,62 +69,9 @@ function dotSourceExcelUtil(): string {
   return `. '${psq(utilPath)}'`;
 }
 
-// PowerShell からの JSON 出力を見て、エラー（ERR_ プレフィックス、または ok:false）なら
-// isError:true として返す。注意: isError が立っていない（ok:true）からといって、
-// マクロが「意図した通りに」動作したことまでは保証しない（例外を投げずに完走した、という意味に過ぎない）。
-function classifyResult(outText: string): { content: { type: "text"; text: string }[]; isError?: boolean } {
-  try {
-    const start = Math.min(
-      ...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; })
-    );
-    if (Number.isFinite(start)) {
-      const payload = JSON.parse(outText.slice(start));
-      if (payload && typeof payload.error === "string" && payload.error.startsWith("ERR_")) {
-        return { content: [{ type: "text", text: outText }], isError: true };
-      }
-      if (payload && payload.ok === false) {
-        return { content: [{ type: "text", text: outText }], isError: true };
-      }
-    }
-  } catch { /* JSON以外の出力はそのまま返す */ }
-  return { content: [{ type: "text", text: outText }] };
-}
+// classifyResult / classifyResultWithRedaction moved to responseClassification.ts (v0.0.73)
+// so their branching logic can be covered by the persistent node:test suite.
 
-// classifyResult()の派生版。パース済みJSONペイロードの指定フィールドへredactSecrets/
-// redactCodeTextを適用してからテキスト化する。ハードコードされた認証情報がAIモデルへ
-// 生のまま渡るのを防ぐための処理で、常時適用（呼び出し側で無効化するオプションは無い）。
-// JSON抽出・パースに失敗した場合は既存のclassifyResult(outText)にフォールバックする
-// （既存のエラーパスの挙動を変えない）。
-function classifyResultWithRedaction(
-  outText: string,
-  opts: { stringFields?: string[]; arrayField?: { field: string; subField: string } }
-): { content: { type: "text"; text: string }[]; isError?: boolean } {
-  try {
-    const start = Math.min(
-      ...['{', '['].map(ch => { const i = outText.indexOf(ch); return i === -1 ? Number.POSITIVE_INFINITY : i; })
-    );
-    if (Number.isFinite(start)) {
-      const payload = JSON.parse(outText.slice(start));
-      if (payload && typeof payload === "object") {
-        if (opts.stringFields) {
-          for (const f of opts.stringFields) {
-            if (typeof payload[f] === "string") { payload[f] = redactCodeText(payload[f]); }
-          }
-        }
-        if (opts.arrayField && Array.isArray(payload[opts.arrayField.field])) {
-          for (const item of payload[opts.arrayField.field]) {
-            if (item && typeof item[opts.arrayField.subField] === "string") {
-              item[opts.arrayField.subField] = redactSecrets(item[opts.arrayField.subField]);
-            }
-          }
-        }
-        const isErr = (typeof payload.error === "string" && payload.error.startsWith("ERR_")) || payload.ok === false;
-        return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], isError: isErr || undefined };
-      }
-    }
-  } catch { /* fall through to classifyResult's own raw-passthrough behavior */ }
-  return classifyResult(outText);
-}
 
 // execFileAsyncが非ゼロ終了コードで失敗した場合でも、e.stdout に実際のJSON出力
 // （例: {ok:false, error:"macro not found", ...}）が残っていることが多いため、
