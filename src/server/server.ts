@@ -38,11 +38,23 @@ const server = new McpServer(
   { name: "vba-excel-mcp", title: "Excel VBA Sync", version: "0.1.0" },
   {
     instructions:
-      "Read, search, run macros in, and write to VBA modules of Excel workbooks on this Windows machine, via COM automation. " +
+      "Read, search, analyze, run macros in, and write to Excel workbooks on this Windows machine, via COM automation. " +
       "Prefer workbookPath (full file path) over workbook (display name) -- it auto-launches Excel and auto-opens the file if needed. " +
+      "Coverage is not limited to VBA source: the workbook's own logic can be inspected too -- cell formulas (excel_list_formulas), " +
+      "conditional formatting (excel_list_conditional_formats) and data validation incl. dropdown choices (excel_list_data_validations). " +
+      "When investigating or migrating an Excel application, check these as well as the VBA code: a macro's output is often further " +
+      "processed by spreadsheet formulas and formatting rules that appear nowhere in the VBA, and excel_read_range shows only the " +
+      "resulting values, never the formula behind them. " +
+      "Before generating code that references a sheet, defined name or form control by name, confirm it actually exists " +
+      "(excel_list_worksheets / excel_list_defined_names / excel_list_form_controls) -- a wrong name fails at RUNTIME, not at write time. " +
       "excel_update_module_code requires dryRun:true first to preview and get a confirmToken, then a second call with that token to actually write; " +
       "the token is rejected with ERR_MODULE_CHANGED_SINCE_DRYRUN if the module changed in the meantime. " +
-      "A backup of the replaced code is always written before any change.",
+      "A backup of the replaced code is always written before any change, and the workbook is never saved to disk automatically -- " +
+      "tell the user their change is not yet persisted. UserForms can have their code-behind overwritten but their layout is never touched, " +
+      "and new UserForms cannot be created. " +
+      "Values that look like hardcoded passwords or API keys are always masked as [REDACTED] in any tool output that returns code text. " +
+      "This server intentionally enforces no coding conventions (naming, error handling, form structure) -- follow whatever conventions " +
+      "the caller's own instructions define.",
   }
 );
 server.tool("ping", "Health check for the excel-vba-sync MCP server. Returns the literal string 'pong' if the server process is reachable. Does not touch Excel.", {}, async () => ({ content: [{ type: "text", text: "pong" }] }));
