@@ -63,6 +63,14 @@ const server = new McpServer(
       "A backup of the replaced code is always written before any change, and the workbook is never saved to disk automatically -- " +
       "tell the user their change is not yet persisted. UserForms can have their code-behind overwritten but their layout is never touched, " +
       "and new UserForms cannot be created. " +
+      "If the user keeps exported .bas/.cls/.frm files (for editing in VS Code or git), call excel_export_module right after each confirmed write -- " +
+      "otherwise their on-disk copy is stale and a later manual Import will silently revert your change. " +
+      "If a written change is tested and rejected: since nothing was auto-saved, closing Excel WITHOUT saving and reopening restores the workbook's last " +
+      "saved state; alternatively rewrite the module from the pre-change backup in .excel-vba-sync-backups. Either way, call excel_export_module again " +
+      "afterwards so the exported file matches the restored code. " +
+      "If a workbook or module the user named does not exist (ERR_WORKBOOK_NOT_FOUND, or missing from excel_list_modules), do NOT silently substitute " +
+      "a similar-looking one you found yourself -- a one-character difference can be a different file, not a typo. Say what you found and get the user's " +
+      "confirmation BEFORE any write. Reading to help identify the right target is fine; writing to a guessed target is not. " +
       "Values that look like hardcoded passwords or API keys are always masked as [REDACTED] in any tool output that returns code text. " +
       "This server intentionally enforces no coding conventions (naming, error handling, form structure) -- follow whatever conventions " +
       "the caller's own instructions define.",
@@ -1136,6 +1144,142 @@ server.tool(
       }
       return extractFailureResult(e);
     }
+  }
+);
+
+// ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_export_module ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+// Re-exports one module to the extension's export-folder layout, so the on-disk
+// .bas/.cls/.frm a human will edit in VS Code reflects what is actually in Excel.
+// Motivation: in the "AI writes via MCP, human polishes in VS Code" workflow, the
+// dangerous omission is forgetting to re-export after an MCP write -- the human then
+// edits a stale file and a later manual Import silently reverts the AI's change.
+// Reuses scripts/export_opened_vba.ps1 (the manual "Export All Modules" path) with
+// -BookName/-ModuleName filters and -NoActivate, so Attribute lines, .frm/.frx pairs
+// and the Type-100 Lines() fallback behave exactly like a manual export. The exported
+// file is written from Excel's CURRENT state via COM .Export(), not from any text this
+// server was given -- and its content is deliberately NOT returned (a local file for
+// the user's editor must never pass through redaction, and the AI already knows the code).
+server.tool(
+  "excel_export_module",
+  "Export ONE module from an open workbook to the extension's export-folder layout (<exportDir>\\<workbook name without extension>\\<module>.bas/.cls/.frm), refreshing the on-disk copy a human edits in VS Code. " +
+  "Call this right after a confirmed excel_update_module_code write when the user keeps exported files -- otherwise their next manual edit starts from a stale file and a later Import reverts your change. " +
+  "An existing exported file (incl. a .frm's paired .frx) is backed up to <exportDir>\\.excel-vba-sync-backups\\ before being overwritten. " +
+  "Requires Excel already running with the workbook open (no auto-launch). Returns the exported file path, never the code text.",
+  {
+    workbook: z.string().optional().describe("Workbook display name (e.g. Book1.xlsm). Give this or workbookPath."),
+    workbookPath: z.string().optional().describe("Full path to the workbook; only its base name is used to pick the open workbook."),
+    module: z.string().describe("Module name to export."),
+    exportDir: z.string().describe("Export ROOT folder (the extension's configured export folder). Must already exist; a subfolder named after the workbook is created inside it. Must not be under OneDrive (refused, same rule as the manual export command)."),
+  },
+  async ({ workbook, workbookPath, module: moduleName, exportDir }) => {
+    const scriptsDir = getScriptsDir();
+    if (!scriptsDir) {
+      return { content: [{ type: "text", text: JSON.stringify({ error: "MCP_SCRIPTS_DIR / MCP_PS_LIST not set" }) }] };
+    }
+    const ps = path.join(scriptsDir, "export_opened_vba.ps1");
+    if (!fs.existsSync(ps)) {
+      return { content: [{ type: "text", text: JSON.stringify({ error: `ps1 not found: ${ps}` }) }] };
+    }
+    const source = workbookPath ?? workbook;
+    if (!source) {
+      return { content: [{ type: "text", text: JSON.stringify({ error: "workbook or workbookPath required" }) }] };
+    }
+    // The script's -BookName filter compares against the name WITHOUT extension.
+    const bookName = path.basename(source, path.extname(source));
+
+    // Back up any existing exported file for this module (and a .frm's paired .frx binary)
+    // before the script overwrites it. Two reasons: (1) if the AI-written change is tested
+    // and REJECTED, the previous exported content is the fallback; (2) the human may have
+    // edited the exported file without importing yet -- this export would silently destroy
+    // that work. Same conventions as the write tool's code backup: best-effort (a backup
+    // failure never blocks the export), timestamped, under a .excel-vba-sync-backups dir.
+    const bookDirPre = path.join(exportDir, bookName);
+    let previousFileBackups: string[] = [];
+    try {
+      const existing = [".bas", ".cls", ".frm", ".txt", ".frx"]
+        .map((ext) => ({ ext, p: path.join(bookDirPre, moduleName + ext) }))
+        .filter(({ p }) => fs.existsSync(p));
+      if (existing.length > 0) {
+        const d = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+        const backupDir = path.join(exportDir, ".excel-vba-sync-backups", bookName);
+        fs.mkdirSync(backupDir, { recursive: true });
+        for (const { ext, p } of existing) {
+          const dest = path.join(backupDir, `${moduleName}_${ts}${ext}`);
+          fs.copyFileSync(p, dest);
+          previousFileBackups.push(dest);
+        }
+      }
+    } catch {
+      previousFileBackups = [];
+    }
+
+    const args = [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+      "-File", ps,
+      "-OutputDir", exportDir,
+      "-BookName", bookName,
+      "-ModuleName", moduleName,
+      "-NoActivate",
+    ];
+    // Exit codes of export_opened_vba.ps1 (localized log text goes to stdout, not JSON).
+    const exitCodeMessages: Record<number, string> = {
+      1: "exportDir argument missing",
+      2: "exportDir is under OneDrive -- refused, same rule as the manual export command. Use a folder outside OneDrive.",
+      3: "Excel is not running. This tool does not auto-launch Excel; open the workbook first (any read tool with workbookPath does that).",
+      4: "No saved macro-enabled workbook (.xlsm/.xlsb) is open in Excel.",
+      5: `exportDir does not exist: ${exportDir}. Create it first (or fix a typo) -- it is not auto-created.`,
+      6: `Nothing was exported -- module '${moduleName}' not found in workbook '${bookName}', or its VBA project is protected.`,
+    };
+
+    let stdoutText = "";
+    try {
+      const { stdout } = await execFileAsync("powershell.exe", args, {
+        windowsHide: true,
+        encoding: "buffer",
+        maxBuffer: 2 * 1024 * 1024,
+        cwd: path.dirname(ps),
+        timeout: 60000,
+      });
+      stdoutText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+    } catch (e: any) {
+      const code = typeof e?.code === "number" ? e.code : undefined;
+      const tail = (Buffer.isBuffer(e?.stdout) ? e.stdout.toString("utf8") : String(e?.stdout ?? "")).trim().split(/\r?\n/).slice(-5).join("\n");
+      return {
+        content: [{ type: "text", text: JSON.stringify({
+          ok: false,
+          error: (code !== undefined && exitCodeMessages[code]) || `export script failed (exit ${code ?? "?"})`,
+          log: tail,
+        }) }],
+        isError: true,
+      };
+    }
+
+    // exit 0: locate the produced file (extension depends on the module's type).
+    const bookDir = path.join(exportDir, bookName);
+    const exported = [".bas", ".cls", ".frm", ".txt"]
+      .map((ext) => path.join(bookDir, moduleName + ext))
+      .filter((p) => fs.existsSync(p))
+      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+    if (!exported) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({
+          ok: false,
+          error: `script reported success but no exported file found under ${bookDir}`,
+          log: stdoutText.trim().split(/\r?\n/).slice(-5).join("\n"),
+        }) }],
+        isError: true,
+      };
+    }
+    return { content: [{ type: "text", text: JSON.stringify({
+      ok: true,
+      workbook: bookName,
+      module: moduleName,
+      exportedPath: exported,
+      previousFileBackups: previousFileBackups.length > 0 ? previousFileBackups : undefined,
+      note: "File reflects Excel's current in-memory VBA project. The workbook itself is still not saved to disk.",
+    }) }] };
   }
 );
 

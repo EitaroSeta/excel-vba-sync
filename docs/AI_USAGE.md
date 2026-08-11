@@ -16,7 +16,7 @@
    - Claude Code: プロジェクトルートの`.mcp.json`
    - Claude Desktop: `claude_desktop_config.json`
    - 既存の設定がある場合はファイル全体を上書きせず、`mcpServers`オブジェクトに`excel-vba-sync`のエントリだけを追記する
-3. AIクライアントを再起動 → 19ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `vba_list_references` / `vba_list_variable_scopes` / `excel_update_module_code` / `excel_read_range` / `excel_list_worksheets` / `excel_list_form_controls` / `excel_list_defined_names` / `excel_list_formulas` / `excel_list_conditional_formats` / `excel_list_data_validations`）が使用可能に
+3. AIクライアントを再起動 → 20ツール（`ping` / `excel_list_modules` / `excel_get_module_code` / `excel_list_macros` / `excel_run_macro` / `excel_export_module` / `vba_search_code` / `vba_analyze_flow` / `vba_render_flowchart` / `vba_list_dependencies` / `vba_list_references` / `vba_list_variable_scopes` / `excel_update_module_code` / `excel_read_range` / `excel_list_worksheets` / `excel_list_form_controls` / `excel_list_defined_names` / `excel_list_formulas` / `excel_list_conditional_formats` / `excel_list_data_validations`）が使用可能に
 
 ### 1.2 VS Code内蔵・VS Code拡張機能型のAIクライアント（Copilot Chat / Codex 等）
 
@@ -42,6 +42,9 @@ Claude Code/Desktop（手動設定）とVS Code内蔵クライアント（自動
 - **マイグレーション調査でVBAコードだけ見て満足しない** → マクロが出力した値を、さらにセル上の数式（VLOOKUP等）・条件付き書式・入力規則が加工/制約して人間向けの情報にしているケースがある。`excel_read_range`は計算結果の値しか返さないため、数式そのものを見るには`excel_list_formulas`、色分け等のルールは`excel_list_conditional_formats`、ドロップダウンの選択肢等の入力制約は`excel_list_data_validations`（`type: "List"`のときの`exampleFormula1`が実際の選択肢）を使う。いずれもフィルダウンされた同一パターンのルールは自動的に1グループへ集約されるため、`cellCount`が大きくても「同じルールが多数のセルに適用されている」と解釈すればよい。`type`/`operator`は判明している値のみ名前に変換され、未知の値は生の数値のまま返る（それでも正しいデータ）
 - **コード中のパスワード・APIキーはAIに見せる前に自動でマスクされる** → 詳細は13「ハードコードされた認証情報の自動マスキング」を参照
 - **AIに一貫した流儀でコードを書かせたい場合** → このサーバーは規約を持たない。呼び出し側（スキル・`CLAUDE.md`・システムプロンプト等）で定義する。詳細は12「コーディング規約はこのサーバーには持たせない」を参照
+- **指定した名前のブック・モジュールが見つからないと言われた場合** → AIエージェントが「似た名前」を自力で探して**確認なしに書き込む**ことがある（実例：1桁違いのパス指定に対し、ツールは正しく`ERR_WORKBOOK_NOT_FOUND`を返したが、エージェントが自前のシェルでフォルダを走査して似た名前のファイルを見つけ、そのまま書き込みまで完遂した）。サーバーのinstructionsで「推測した対象への書き込み前にユーザー確認せよ」と指示しているが、これは助言であり強制力は無い。**確実に止めたい場合はAIクライアント側で書き込み系ツール（`excel_update_module_code`）を「毎回承認」にしておく**こと（「常に許可」にしない）
+- **「AIがMCPで書き、人間がVS Codeで仕上げる」運用の場合** → `excel_update_module_code`の確定書き込み直後に`excel_export_module`でそのモジュールをエクスポートフォルダへ書き出す。これを怠ると、人間が**古いファイル**を編集し、後の手動Importで**AIの修正が黙って巻き戻る**（この運用で最も危険な取りこぼし）。エクスポートは`.Export()`によるExcelの現在状態の書き出しなので、Attribute行・`.frm`/`.frx`ペアとも手動エクスポートと同品質。コード本文は応答に含まれない（ローカルファイルにredactionを通さないための意図的な設計）。逆方向（編集済みファイル→Excel）は、拡張機能側の保存時プロンプト（設定`excelVbaSync.importPromptOnSave`）が人間に提案する
+- **AIの修正をテストして不採用にした場合のフォールバック** → 戻す場所は2層ある。**Excel側**：何も保存していなければ「**Excelを保存せずに閉じて開き直す**」が最速かつ完全なロールバック（このツールが`.xlsm`を自動保存しない設計だからこそ成立する）。部分的に戻したい場合は、ブックと同じフォルダの`.excel-vba-sync-backups`に書き込み前のコードが退避されているので、その内容で`excel_update_module_code`を再実行する。**ファイル側**：Excelを戻した後に`excel_export_module`をもう一度呼べば一致が回復する。また`excel_export_module`自体も、上書き前の既存ファイル（`.frm`の場合はペアの`.frx`も）を`<エクスポートフォルダ>\.excel-vba-sync-backups\<ブック名>\`へタイムスタンプ付きで退避してから書き出すので（応答の`previousFileBackups`にパスが入る）、エクスポート後に不採用へ転じた場合や、未インポートの手動編集をエクスポートで上書きしてしまった場合もそこから復元できる。エクスポートフォルダをgit管理していればコミット済みの版へはgitでも戻せる
 
 ## 3. 書き込み（`excel_update_module_code`）の安全設計
 

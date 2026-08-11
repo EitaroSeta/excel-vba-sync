@@ -2,7 +2,7 @@
     "name": "excel-vba-sync",
     "displayName": "excel-vba-sync",
     "description": "Export VBA modules to VSCode & import them back to Excel.",
-    "version": "0.0.78",
+    "version": "0.0.79",
     "publisher": "9kv8xiyi",
     "license": "MIT",
     "author": {
@@ -65,6 +65,11 @@
                     "type": "string",
                     "default": "exported",
                     "description": "VBAモジュールのエクスポート先フォルダ"
+                },
+                "excelVbaSync.importPromptOnSave": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "エクスポートフォルダ配下の .bas/.cls/.frm を保存したとき、Excelへのインポートを提案する通知を表示する / Show a prompt offering to import into Excel when a .bas/.cls/.frm under the export folder is saved"
                 }
             }
         },

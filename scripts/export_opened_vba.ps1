@@ -27,7 +27,8 @@
 param (
     [string]$OutputDir,
     [string]$BookName,
-    [string]$ModuleName
+    [string]$ModuleName,
+    [switch]$NoActivate
 )
 write-host "----------------------------------------"
 write-host "Output Directory: $OutputDir"
@@ -95,15 +96,17 @@ try {
 }
 
 # Excelウィンドウを明示的にアクティブにする
-$excel.Visible = $true
-[void] $excel.Windows.Item(1).Activate() 
-Start-Sleep -Milliseconds 300
+if (-not $NoActivate) {
+    $excel.Visible = $true
+    [void] $excel.Windows.Item(1).Activate()
+    Start-Sleep -Milliseconds 300
+}
 
 # VBE を可視化・プロジェクトウィンドウにフォーカス
 # $excel.VBE.MainWindow がまだ生成されていないタイミング（VBEが一度も開かれていない等）では
 # プロパティ自体が存在せずエラーになるため、致命的ではないので握りつぶす
-try { $excel.VBE.MainWindow.Visible = $true } catch {}
-foreach ($window in $excel.VBE.Windows) {
+if (-not $NoActivate) { try { $excel.VBE.MainWindow.Visible = $true } catch {} }
+foreach ($window in $(if ($NoActivate) { @() } else { $excel.VBE.Windows })) {
     if ($window.Caption -like "*Project*") {
         $window.SetFocus() 
         #Write-Host $messages."export.info.excelFocus"

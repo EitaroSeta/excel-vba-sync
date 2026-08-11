@@ -1189,6 +1189,41 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Import prompt on save ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  // エクスポートフォルダ配下の .bas/.cls/.frm を保存した瞬間に、Excelへのインポートを
+  // トーストで提案する。「後でインポートしよう」という記憶頼みの工程（忘れると編集が
+  // Excelに届かない）を、編集完了と同じ瞬間のワンクリックに変える。
+  // 黙って自動インポートはしない：編集途中の保存で未完成のコードがExcelへ飛ぶのを防ぎ、
+  // COMビジー（RPC_E_CALL_REJECTED）等の失敗も既存のimportVBAコマンドの経路で見える形にする。
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (doc) => {
+      const cfg = vscode.workspace.getConfiguration('excelVbaSync');
+      if (!cfg.get<boolean>('importPromptOnSave', true)) { return; }
+      const fileExt = path.extname(doc.uri.fsPath).toLowerCase();
+      if (!['.bas', '.cls', '.frm'].includes(fileExt)) { return; }
+      const root = resolveExportRoot();
+      if (!root) { return; }
+      // Windowsのパスは大文字小文字を区別しないため、両者を正規化して前方一致で判定する
+      const rootNorm = path.resolve(root).toLowerCase() + path.sep;
+      const fileNorm = path.resolve(doc.uri.fsPath).toLowerCase();
+      if (!fileNorm.startsWith(rootNorm)) { return; }
+
+      const fileName = path.basename(doc.uri.fsPath);
+      const importLabel = t('extension.importPrompt.import');
+      const neverLabel = t('extension.importPrompt.never');
+      const choice = await vscode.window.showInformationMessage(
+        t('extension.importPrompt.message', { 0: fileName }),
+        importLabel,
+        neverLabel
+      );
+      if (choice === importLabel) {
+        await vscode.commands.executeCommand('excel-vba-sync.importVBA', { uri: doc.uri });
+      } else if (choice === neverLabel) {
+        await cfg.update('importPromptOnSave', false, vscode.ConfigurationTarget.Global);
+      }
+    })
+  );
+
   // ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ Set Export Folder ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
   context.subscriptions.push(outputChannel); // 拡張機能終了時にチャネルを破棄
   context.subscriptions.push(

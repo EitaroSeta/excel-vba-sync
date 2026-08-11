@@ -71,6 +71,20 @@ Excel VBE  <--[Import]--  編集したファイル
 
 両者は独立した2つのコピーです。明示的な操作（Export／Import）でのみ同期します。
 
+#### 💬 保存時のインポート提案
+
+Importの押し忘れを防ぐため、**エクスポートフォルダ配下**の`.bas`/`.cls`/`.frm`をVS Codeで保存（`Ctrl+S`）すると、右下に通知が出ます：
+
+> 📄 `Module1.bas` を保存しました。Excelへインポートしますか？　**[インポート]** **[今後表示しない]**
+
+- **[インポート]** — そのファイル1つを既存のImport処理でExcelへ反映します（結果は出力パネルに表示）
+- **通知を閉じる（×）** — 何もしません。次に保存したときにまた提案されます
+- **[今後表示しない]** — 通知を完全にオフにします（下記の設定がオフに切り替わります）
+
+勝手にインポートすることはありません。編集途中の保存で未完成のコードがExcelへ飛ばないよう、必ずボタンを押したときだけ実行されます。エクスポートフォルダの外のファイルや、`.bas`/`.cls`/`.frm`以外の保存では何も出ません。
+
+オン／オフは設定 `excelVbaSync.importPromptOnSave` で切り替えられます（既定：オン）。設定画面（`Ctrl+,`）で「excel vba sync」と検索するとチェックボックスが見つかります。「今後表示しない」を押した後に復活させたい場合も、ここを再度オンにしてください。
+
 ### 🤖 ② AIエージェントから操作（MCP）
 
 AIクライアント（Claude Code・Claude Desktop・Copilot Chat・Codex等）は、**エクスポートフォルダを経由しません**。内蔵のMCPサーバーがCOM経由で、Excelの「今開いているVBAプロジェクト」を直接読み書きします。
@@ -86,7 +100,7 @@ AIクライアント（Claude Code / Copilot Chat 等）
 
 ただし一発では書き込めません。書き込みには`dryRun`→`confirmToken`の2段階確認、自動バックアップ、複数クライアント利用時の排他制御が入っています。詳しくは「[内蔵MCPサーバーが提供する機能](#ja-ai-usage)」を参照してください。
 
-**①と②は独立しています。** AIがExcelへ直接書き込んだ内容をエクスポート済みファイルへ反映したい場合は、改めて手動でExportしてください。自動では同期しません。
+**①と②は独立しています。** 自動では同期しませんが、橋渡しは2つあります：AIがExcelへ書き込んだ内容は`excel_export_module`ツールでそのモジュールだけエクスポートファイルへ反映でき（AIエージェントが書き込み後に自分で呼びます）、逆方向は上記「[保存時のインポート提案](#ja-two-ways)」が編集済みファイルのインポートを提案します。
 
 ## <a id="ja-ai-usage"></a>内蔵MCPサーバーが提供する機能
 
@@ -94,7 +108,7 @@ AIクライアント（Claude Code / Copilot Chat 等）
 
 Claude Code・Claude Desktop・Copilot Chat・Codex等のAIクライアントから、VBAコードの読み取り・検索・解析・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます（上記②）。
 
-### 提供される19のツール
+### 提供される20のツール
 
 | ツール | できること |
 |---|---|
@@ -111,6 +125,7 @@ Claude Code・Claude Desktop・Copilot Chat・Codex等のAIクライアントか
 | `excel_run_macro` | マクロを実行 |
 | `excel_read_range` | セル範囲の値を読み取り（マクロの実行結果検証等に） |
 | `excel_update_module_code` | 既存モジュール（UserFormのコード部分も可）へ書き込み、または`moduleType`指定で新規モジュールを作成。`dryRun`/`confirmToken`の安全フロー付き、重複プロシージャ名も警告 |
+| `excel_export_module` | 指定モジュール1つをエクスポートフォルダへ書き出し（書き込み後にディスク上のファイルを最新化。①の手動編集と組み合わせる運用向け） |
 | `excel_list_worksheets` | 実在するシート一覧を取得（表示名・VBAコード名・表示状態） |
 | `excel_list_form_controls` | UserForm内のコントロール一覧を取得（名前・種類） |
 | `excel_list_defined_names` | 実在する名前付き範囲の一覧を取得（参照先・壊れているかどうか） |
@@ -271,6 +286,20 @@ Excel VBE  <--[Import]--  the edited files
 
 They are two independent copies. They only sync on an explicit Export or Import.
 
+#### 💬 Import prompt on save
+
+To keep you from forgetting the Import step, saving (`Ctrl+S`) a `.bas`/`.cls`/`.frm` **under the export folder** shows a notification in the bottom-right corner:
+
+> 📄 `Module1.bas` was saved. Import it into Excel?　**[Import]** **[Don't ask again]**
+
+- **[Import]** — runs the existing Import for that one file (the result appears in the output panel)
+- **Closing the toast (×)** — does nothing; you will be asked again on the next save
+- **[Don't ask again]** — turns the prompt off permanently (flips the setting below)
+
+It never imports on its own: nothing reaches Excel unless you click the button, so a mid-edit save cannot push half-finished code. Saving files outside the export folder, or with other extensions, shows nothing.
+
+The prompt is controlled by the `excelVbaSync.importPromptOnSave` setting (default: on). Search for "excel vba sync" in Settings (`Ctrl+,`) to find the checkbox — re-enable it there if you clicked "Don't ask again" and want the prompt back.
+
 ### 🤖 ② Driving it from an AI agent (MCP)
 
 AI clients (Claude Code, Claude Desktop, Copilot Chat, Codex, etc.) **bypass the export folder entirely**. The built-in MCP server reads and writes the currently open VBA project directly, via COM.
@@ -286,7 +315,7 @@ Built-in MCP server  ──directly via COM──>  Excel VBE (the currently ope
 
 It cannot write in one shot, though. Writes go through a two-step `dryRun`/`confirmToken` confirmation, automatic backups, and concurrency control for multiple clients. See "[What the built-in MCP server provides](#en-ai-usage)" for details.
 
-**① and ② are independent.** If an AI writes directly to Excel and you also want that in ①'s exported files, Export again manually. It does not sync automatically.
+**① and ② are independent.** Nothing syncs automatically, but there are two bridges: an AI agent can refresh a single exported file right after writing to Excel via the `excel_export_module` tool, and in the other direction the "[Import prompt on save](#en-two-ways)" above offers to import your edited file.
 
 ## <a id="en-ai-usage"></a>What the built-in MCP server provides
 
@@ -294,7 +323,7 @@ This extension has a built-in [Model Context Protocol (MCP)](https://modelcontex
 
 AI clients such as Claude Code, Claude Desktop, Copilot Chat and Codex can read, search, analyze and run VBA code — and **write AI-authored code directly into an Excel VBA module** (option ② above).
 
-### 19 available tools
+### 20 available tools
 
 | Tool | What it does |
 |---|---|
@@ -311,6 +340,7 @@ AI clients such as Claude Code, Claude Desktop, Copilot Chat and Codex can read,
 | `excel_run_macro` | Run a macro |
 | `excel_read_range` | Read cell values from a range (e.g. to verify a macro's effect) |
 | `excel_update_module_code` | Overwrite an existing module (including a UserForm's code-behind), or create a new one via `moduleType`. Includes the `dryRun`/`confirmToken` safety flow and a duplicate-procedure-name warning |
+| `excel_export_module` | Export one module to the export folder, refreshing the on-disk copy after an MCP write (for workflows that combine ① manual editing) |
 | `excel_list_worksheets` | List actual worksheets (display name, VBA CodeName, visibility) |
 | `excel_list_form_controls` | List a UserForm's controls (name and type) |
 | `excel_list_defined_names` | List actual defined names (what they refer to, whether broken) |
