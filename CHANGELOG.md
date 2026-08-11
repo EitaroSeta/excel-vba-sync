@@ -3,6 +3,9 @@ All notable changes to the "excel-vba-sync" extension are documented here.
 
 This file follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+What counts as this project's public API -- and hence what forces a major/minor/patch bump,
+and the criteria for 1.0.0 -- is defined in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+(policy adopted at v0.0.80; earlier 0.0.x versions were simple increments).
 
 **Note on development process**: Since v0.0.28, implementation has been done via AI-assisted development ("vibe coding") with Claude (Anthropic), reviewed by a human at each step. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for details.
 

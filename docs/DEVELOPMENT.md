@@ -52,6 +52,41 @@ vsce publish                 ※公開
 ```
 `.vscodeignore` により TypeScript やテスト等はパッケージから除外されます。
 
+## バージョニング方針 / Versioning Policy
+
+> この方針は v0.0.80 時点（2026-08-11）で後付けで定めたもの。それまでの 0.0.x は変更内容にかかわらず単純インクリメントで運用していた。
+> This policy was defined retroactively at v0.0.80 (2026-08-11). Versions before that were simple increments regardless of the nature of the change.
+
+[Semantic Versioning](https://semver.org/) に従う。判断の基準となる**公開API**を以下と定義する：
+
+| 公開APIの構成要素 / Public API surface | 例 / Examples |
+|---|---|
+| MCPツールの名前・パラメータ・応答フィールド | 全20ツールの入出力形式 |
+| VS Codeコマンドと設定 | `excel-vba-sync.*` コマンド、`excelVbaSync.*` 設定 |
+| ファイル規約 | エクスポートフォルダ構造（`<root>/<ブック名>/<モジュール>.ext`）、`.excel-vba-sync-backups` の場所と命名、`.lastexport.json` サイドカー形式 |
+| 環境変数 | `MCP_SCRIPTS_DIR` / `MCP_PS_LIST` / `MCP_PS_RUN` |
+
+**バージョンの上げ方 / How to bump:**
+
+- **パッチ（x.y.Z）**: バグ修正、説明文・ドキュメントの変更、内部リファクタリング（動作の外形が変わらないもの）
+  Bug fixes, description/doc changes, internal refactoring with no observable behavior change
+- **マイナー（x.Y.0）**: 後方互換の追加 — 新ツール、任意パラメータの追加、応答への新フィールド追加、新設定
+  Backward-compatible additions -- new tools, new optional parameters, new response fields, new settings
+- **メジャー（X.0.0）**: 公開APIを壊す変更 — ツール名・必須パラメータ・応答フィールド名の変更、コマンド／設定／環境変数の削除・改名、ファイル規約の変更
+  Breaking changes to the public API -- renaming tools/required params/response fields, removing or renaming commands/settings/env vars, changing file conventions
+
+**1.0.0 の条件 / Criteria for 1.0.0:**
+
+機能の完成度ではなく「壊すときはメジャーを上げる」という**約束を開始できるか**で判断する。具体的には：
+
+1. ビジョンの完成 — 3本柱（リバースエンジニアリング／マイグレーション調査／AI書き込みMCP）と、AI書き込み↔手動編集ワークフローの全区間カバー（v0.0.79/80で達成）
+2. ドキュメントが実態と一致していること（README 日英・AI_USAGE・CHANGELOG）
+3. **公開APIが枯れていること** — 直近の追加機能を数週間実運用して、破壊的に変えたい点が出ないこと
+
+1と2は v0.0.80 時点で達成済み。3の確認期間を経て問題がなければ、コード変更なしのバージョン番号のみのリリースとして 1.0.0 を出してよい（0.1.0 を経由する必要はない）。
+
+**プレリリース / Pre-release:** 1.0.0 以降に実験的機能を試す場合は `vsce publish --pre-release` を使う。Marketplaceの慣例は「マイナー奇数＝プレリリース、偶数＝安定版」（例: 1.1.x がベータ、1.2.x が安定）。
+
 ## リポジトリ構成（抜粋） / Repo Layout
 - `src/` — 拡張のソースコード（TypeScript）
 - `scripts/` — Excel 連携用 PowerShell Script
