@@ -13,6 +13,7 @@ import { scanModuleForVariableScopes, ModuleVariableScopeScan, resolveVariableUs
 import { findCrossModuleDuplicates, CrossModuleDuplicate } from "./duplicateProcedureScan.js";
 import { redactSecrets, redactCodeText } from "./secretRedaction.js";
 import { classifyResult, classifyResultWithRedaction } from "./responseClassification.js";
+import { evaluateExportGuard } from "./exportGuard.js";
 const execFileAsyncRaw = promisify(execFile);
 // Serializes all Excel-COM-touching PowerShell invocations so concurrent MCP tool
 // calls (e.g. an agent firing off excel_list_modules/excel_list_macros/excel_read_range
@@ -1164,14 +1165,16 @@ server.tool(
   "Export ONE module from an open workbook to the extension's export-folder layout (<exportDir>\\<workbook name without extension>\\<module>.bas/.cls/.frm), refreshing the on-disk copy a human edits in VS Code. " +
   "Call this right after a confirmed excel_update_module_code write when the user keeps exported files -- otherwise their next manual edit starts from a stale file and a later Import reverts your change. " +
   "An existing exported file (incl. a .frm's paired .frx) is backed up to <exportDir>\\.excel-vba-sync-backups\\ before being overwritten. " +
+  "If the file changed since this tool's last export (likely a human's not-yet-imported edit), the call is refused with ERR_EXPORTED_FILE_MODIFIED -- ask the user, then import their file first or re-call with force:true. " +
   "Requires Excel already running with the workbook open (no auto-launch). Returns the exported file path, never the code text.",
   {
     workbook: z.string().optional().describe("Workbook display name (e.g. Book1.xlsm). Give this or workbookPath."),
     workbookPath: z.string().optional().describe("Full path to the workbook; only its base name is used to pick the open workbook."),
     module: z.string().describe("Module name to export."),
     exportDir: z.string().describe("Export ROOT folder (the extension's configured export folder). Must already exist; a subfolder named after the workbook is created inside it. Must not be under OneDrive (refused, same rule as the manual export command)."),
+    force: z.boolean().optional().describe("Overwrite even if the exported file was modified since this tool's last export. Only after the user confirmed discarding that change (a backup is still taken)."),
   },
-  async ({ workbook, workbookPath, module: moduleName, exportDir }) => {
+  async ({ workbook, workbookPath, module: moduleName, exportDir, force }) => {
     const scriptsDir = getScriptsDir();
     if (!scriptsDir) {
       return { content: [{ type: "text", text: JSON.stringify({ error: "MCP_SCRIPTS_DIR / MCP_PS_LIST not set" }) }] };
@@ -1187,13 +1190,42 @@ server.tool(
     // The script's -BookName filter compares against the name WITHOUT extension.
     const bookName = path.basename(source, path.extname(source));
 
+    // Guard: refuse to overwrite a file that changed since this tool's last export.
+    // The write tool's optimistic lock watches only the VBE side, so a human editing the
+    // EXPORTED FILE in VS Code has no protection there -- their saved-but-not-imported
+    // edit would be silently replaced. A sidecar records the hash of what this tool last
+    // wrote; a mismatch means someone else touched the file since (see exportGuard.ts).
+    const bookDirPre = path.join(exportDir, bookName);
+    const sidecarPath = path.join(exportDir, ".excel-vba-sync-backups", bookName, `${moduleName}.lastexport.json`);
+    const codeFileOnDisk = [".bas", ".cls", ".frm", ".txt"]
+      .map((ext) => path.join(bookDirPre, moduleName + ext))
+      .find((p) => fs.existsSync(p));
+    let lastExportHash: string | null = null;
+    try {
+      lastExportHash = JSON.parse(fs.readFileSync(sidecarPath, "utf8")).sha256 ?? null;
+    } catch { /* no sidecar or unreadable -> provenance unknown, guard stays out of the way */ }
+    const currentFileHash = codeFileOnDisk
+      ? createHash("sha256").update(fs.readFileSync(codeFileOnDisk)).digest("hex")
+      : null;
+    const guard = evaluateExportGuard({ currentFileHash, lastExportHash, force: force === true });
+    if (!guard.ok) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({
+          ok: false,
+          error: guard.error,
+          detail: guard.detail,
+          file: codeFileOnDisk,
+        }) }],
+        isError: true,
+      };
+    }
+
     // Back up any existing exported file for this module (and a .frm's paired .frx binary)
     // before the script overwrites it. Two reasons: (1) if the AI-written change is tested
     // and REJECTED, the previous exported content is the fallback; (2) the human may have
     // edited the exported file without importing yet -- this export would silently destroy
     // that work. Same conventions as the write tool's code backup: best-effort (a backup
     // failure never blocks the export), timestamped, under a .excel-vba-sync-backups dir.
-    const bookDirPre = path.join(exportDir, bookName);
     let previousFileBackups: string[] = [];
     try {
       const existing = [".bas", ".cls", ".frm", ".txt", ".frx"]
@@ -1272,6 +1304,14 @@ server.tool(
         isError: true,
       };
     }
+    // Record what we just wrote, so the next export can tell "unchanged since my last
+    // export" (safe to replace) from "someone edited this in between" (refuse). Best-effort.
+    try {
+      const newHash = createHash("sha256").update(fs.readFileSync(exported)).digest("hex");
+      fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
+      fs.writeFileSync(sidecarPath, JSON.stringify({ file: path.basename(exported), sha256: newHash, at: new Date().toISOString() }));
+    } catch { /* a sidecar failure must not fail the export itself */ }
+
     return { content: [{ type: "text", text: JSON.stringify({
       ok: true,
       workbook: bookName,

@@ -11,6 +11,13 @@ and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Improve error messages around VBA import/export.
 - Add docs: troubleshooting for PowerShell session/language server.
 
+## [0.0.80] - 2026-08-11
+### ### Added
+- `excel_export_module` now refuses to overwrite an exported file that changed since this tool's last export, with `ERR_EXPORTED_FILE_MODIFIED`. Closes the one concurrency gap the user identified in the v0.0.79 workflow: `excel_update_module_code`'s optimistic lock (`ERR_MODULE_CHANGED_SINCE_DRYRUN`) watches only the VBE side, so a human editing the EXPORTED FILE in VS Code had no protection there -- an AI's post-write export would land on their saved-but-not-yet-imported edits. The v0.0.79 backup made that recoverable but silent; the human would keep believing their edits existed. This turns the silent overwrite into an explicit stop.
+- Mechanism: after each successful export the tool records a SHA-256 of the file it wrote in a sidecar (`<exportDir>\.excel-vba-sync-backups\<workbook>\<module>.lastexport.json`). On the next export, a hash mismatch means someone else touched the file in between -- the refusal tells the agent to ask the user and either import the file first or re-call with `force:true` (the pre-overwrite backup still applies either way). Same design idea as the write tool's confirmToken re-check, applied to the file side.
+- Deliberately fails open when provenance is unknown: no sidecar (first export, a manual "Export All Modules" run, or a pre-v0.0.80 export) means the guard cannot tell a human edit from a manual export, so it does not block. The known false positive -- a manual export between two MCP exports trips the guard -- errs toward asking, which is the safe direction.
+- Decision logic extracted to `exportGuard.ts` (COM/fs-free, same pattern as the other pure-logic modules) with 5 unit tests (51 -> 56). Verified live end-to-end: untouched re-export proceeds, a simulated human edit is refused with the file left intact, `force:true` overwrites with the edit preserved in the backup, and the refreshed sidecar lets the next export proceed normally.
+
 ## [0.0.79] - 2026-08-11
 ### ### Added
 - New MCP tool `excel_export_module` (20 tools now): exports ONE module from an open workbook into the extension's export-folder layout. Built for the "AI writes via MCP, human polishes in VS Code" workflow, where analysis showed the dangerous omission is not the obvious one: forgetting to import after editing merely leaves the edit on disk, but forgetting to RE-EXPORT after an MCP write means the human edits a stale file and a later manual Import silently reverts the AI's change. The server's instructions now tell agents to call it right after each confirmed write.
