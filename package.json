@@ -2,7 +2,7 @@
     "name": "excel-vba-sync",
     "displayName": "excel-vba-sync",
     "description": "Export VBA modules to VSCode & import them back to Excel.",
-    "version": "0.0.80",
+    "version": "0.0.81",
     "publisher": "9kv8xiyi",
     "license": "MIT",
     "author": {
@@ -70,6 +70,17 @@
                     "type": "boolean",
                     "default": true,
                     "description": "エクスポートフォルダ配下の .bas/.cls/.frm を保存したとき、Excelへのインポートを提案する通知を表示する / Show a prompt offering to import into Excel when a .bas/.cls/.frm under the export folder is saved"
+                },
+                "excelVbaSync.mcpSyncMode": {
+                    "type": "string",
+                    "enum": ["manual", "remind", "auto"],
+                    "default": "remind",
+                    "enumDescriptions": [
+                        "同期しない（AIエージェントの判断に任せる） / No sync; left to the AI agent's judgment",
+                        "書き込み成功の応答に「このモジュールをエクスポートせよ」の指示を含める / Include an export reminder (with the export folder path) in each successful write response",
+                        "書き込み成功後にサーバーが自動でそのモジュールをエクスポートする / The server automatically exports the module after each successful write"
+                    ],
+                    "description": "MCP経由の書き込み後、エクスポートフォルダのファイルをどう同期するか。remind/autoは対象ブックのエクスポートフォルダ（<エクスポート先>\\<ブック名>\\）が既に存在するときだけ動作する＝エクスポート運用をしていないブックには何もしない。Claude Code/Desktop等の手動設定クライアントは、変更後に「Print MCP Server Config」の再生成が必要 / How MCP writes sync to exported files. remind/auto act only when the workbook's export folder already exists, so they never touch workbooks you don't export. Manually-configured clients (Claude Code/Desktop) need the MCP config regenerated after changing this"
                 }
             }
         },

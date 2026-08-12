@@ -353,6 +353,10 @@ async function startServer(context: vscode.ExtensionContext) {
     MCP_PS_RUN:  runPs,
     MCP_VBA_ROOT: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
     MCP_SCRIPTS_DIR: scriptsDir,   // ExcelUtil.ps1 等を dot-source するための基準パス
+    // 書き込み後のエクスポート同期。サーバーはVS Codeの設定を読めないため、
+    // 拡張機能が起動時点の設定値と解決済みエクスポートルートを環境変数で渡す
+    MCP_SYNC_MODE: vscode.workspace.getConfiguration('excelVbaSync').get<string>('mcpSyncMode', 'remind'),
+    MCP_EXPORT_DIR: resolveExportRoot(),
   };
 
   channel.appendLine(`[MCP] starting: ${serverJs}`);
@@ -768,6 +772,12 @@ export function activate(context: vscode.ExtensionContext) {
                 MCP_PS_LIST: listPs,
                 MCP_PS_RUN: runPs,
                 MCP_SCRIPTS_DIR: scriptsDir,
+                // Post-write export sync: the server cannot read VS Code settings, so the
+                // current setting and the resolved export root are handed over as env.
+                // This provider re-runs when the client (re)starts the server, so these
+                // values stay current without regenerating any config file.
+                MCP_SYNC_MODE: vscode.workspace.getConfiguration('excelVbaSync').get<string>('mcpSyncMode', 'remind'),
+                MCP_EXPORT_DIR: resolveExportRoot(),
                 // process.execPath points at VS Code's own Code.exe; without this,
                 // the editor would launch it as a normal VS Code window instead of
                 // running server.js as plain Node (same reasoning as printMcpConfig below).
@@ -1390,6 +1400,10 @@ export function activate(context: vscode.ExtensionContext) {
               MCP_PS_LIST: listPs,
               MCP_PS_RUN: runPs,
               MCP_SCRIPTS_DIR: scriptsDir,
+              // 生成時点の設定値を焼き込む。excelVbaSync.mcpSyncMode やエクスポート先を
+              // 変更した場合は、このコマンドを再実行して設定ファイルを更新すること
+              MCP_SYNC_MODE: vscode.workspace.getConfiguration('excelVbaSync').get<string>('mcpSyncMode', 'remind'),
+              MCP_EXPORT_DIR: resolveExportRoot(),
               // process.execPath は VS Code 本体(Code.exe)を指す。拡張ホスト内では
               // ELECTRON_RUN_AS_NODE が既に立っているため node として動くが、
               // Claude Code 等が単独でこのコマンドを起動する際は自前でこの変数を

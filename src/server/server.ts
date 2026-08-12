@@ -1160,6 +1160,142 @@ server.tool(
 // file is written from Excel's CURRENT state via COM .Export(), not from any text this
 // server was given -- and its content is deliberately NOT returned (a local file for
 // the user's editor must never pass through redaction, and the AI already knows the code).
+// Core of excel_export_module, shared with excel_update_module_code's post-write auto-sync
+// (MCP_SYNC_MODE=auto): guard check, pre-overwrite backup, script run, sidecar update.
+type ModuleExportResult =
+  | { ok: true; workbook: string; module: string; exportedPath: string; previousFileBackups?: string[]; note: string }
+  | { ok: false; error: string; detail?: string; file?: string; log?: string };
+
+async function performModuleExport(source: string, moduleName: string, exportDir: string, force: boolean): Promise<ModuleExportResult> {
+  const scriptsDir = getScriptsDir();
+  if (!scriptsDir) {
+    return { ok: false, error: "MCP_SCRIPTS_DIR / MCP_PS_LIST not set" };
+  }
+  const ps = path.join(scriptsDir, "export_opened_vba.ps1");
+  if (!fs.existsSync(ps)) {
+    return { ok: false, error: `ps1 not found: ${ps}` };
+  }
+  // The script's -BookName filter compares against the name WITHOUT extension.
+  const bookName = path.basename(source, path.extname(source));
+
+  // Guard: refuse to overwrite a file that changed since this tool's last export.
+  // The write tool's optimistic lock watches only the VBE side, so a human editing the
+  // EXPORTED FILE in VS Code has no protection there -- their saved-but-not-imported
+  // edit would be silently replaced. A sidecar records the hash of what this tool last
+  // wrote; a mismatch means someone else touched the file since (see exportGuard.ts).
+  const bookDirPre = path.join(exportDir, bookName);
+  const sidecarPath = path.join(exportDir, ".excel-vba-sync-backups", bookName, `${moduleName}.lastexport.json`);
+  const codeFileOnDisk = [".bas", ".cls", ".frm", ".txt"]
+    .map((ext) => path.join(bookDirPre, moduleName + ext))
+    .find((p) => fs.existsSync(p));
+  let lastExportHash: string | null = null;
+  try {
+    lastExportHash = JSON.parse(fs.readFileSync(sidecarPath, "utf8")).sha256 ?? null;
+  } catch { /* no sidecar or unreadable -> provenance unknown, guard stays out of the way */ }
+  const currentFileHash = codeFileOnDisk
+    ? createHash("sha256").update(fs.readFileSync(codeFileOnDisk)).digest("hex")
+    : null;
+  const guard = evaluateExportGuard({ currentFileHash, lastExportHash, force });
+  if (!guard.ok) {
+    return { ok: false, error: guard.error, detail: guard.detail, file: codeFileOnDisk };
+  }
+
+  // Back up any existing exported file for this module (and a .frm's paired .frx binary)
+  // before the script overwrites it. Two reasons: (1) if the AI-written change is tested
+  // and REJECTED, the previous exported content is the fallback; (2) the human may have
+  // edited the exported file without importing yet -- this export would silently destroy
+  // that work. Same conventions as the write tool's code backup: best-effort (a backup
+  // failure never blocks the export), timestamped, under a .excel-vba-sync-backups dir.
+  let previousFileBackups: string[] = [];
+  try {
+    const existing = [".bas", ".cls", ".frm", ".txt", ".frx"]
+      .map((ext) => ({ ext, p: path.join(bookDirPre, moduleName + ext) }))
+      .filter(({ p }) => fs.existsSync(p));
+    if (existing.length > 0) {
+      const d = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+      const backupDir = path.join(exportDir, ".excel-vba-sync-backups", bookName);
+      fs.mkdirSync(backupDir, { recursive: true });
+      for (const { ext, p } of existing) {
+        const dest = path.join(backupDir, `${moduleName}_${ts}${ext}`);
+        fs.copyFileSync(p, dest);
+        previousFileBackups.push(dest);
+      }
+    }
+  } catch {
+    previousFileBackups = [];
+  }
+
+  const args = [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+    "-File", ps,
+    "-OutputDir", exportDir,
+    "-BookName", bookName,
+    "-ModuleName", moduleName,
+    "-NoActivate",
+  ];
+  // Exit codes of export_opened_vba.ps1 (localized log text goes to stdout, not JSON).
+  const exitCodeMessages: Record<number, string> = {
+    1: "exportDir argument missing",
+    2: "exportDir is under OneDrive -- refused, same rule as the manual export command. Use a folder outside OneDrive.",
+    3: "Excel is not running. This tool does not auto-launch Excel; open the workbook first (any read tool with workbookPath does that).",
+    4: "No saved macro-enabled workbook (.xlsm/.xlsb) is open in Excel.",
+    5: `exportDir does not exist: ${exportDir}. Create it first (or fix a typo) -- it is not auto-created.`,
+    6: `Nothing was exported -- module '${moduleName}' not found in workbook '${bookName}', or its VBA project is protected.`,
+  };
+
+  let stdoutText = "";
+  try {
+    const { stdout } = await execFileAsync("powershell.exe", args, {
+      windowsHide: true,
+      encoding: "buffer",
+      maxBuffer: 2 * 1024 * 1024,
+      cwd: path.dirname(ps),
+      timeout: 60000,
+    });
+    stdoutText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+  } catch (e: any) {
+    const code = typeof e?.code === "number" ? e.code : undefined;
+    const tail = (Buffer.isBuffer(e?.stdout) ? e.stdout.toString("utf8") : String(e?.stdout ?? "")).trim().split(/\r?\n/).slice(-5).join("\n");
+    return {
+      ok: false,
+      error: (code !== undefined && exitCodeMessages[code]) || `export script failed (exit ${code ?? "?"})`,
+      log: tail,
+    };
+  }
+
+  // exit 0: locate the produced file (extension depends on the module's type).
+  const bookDir = path.join(exportDir, bookName);
+  const exported = [".bas", ".cls", ".frm", ".txt"]
+    .map((ext) => path.join(bookDir, moduleName + ext))
+    .filter((p) => fs.existsSync(p))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+  if (!exported) {
+    return {
+      ok: false,
+      error: `script reported success but no exported file found under ${bookDir}`,
+      log: stdoutText.trim().split(/\r?\n/).slice(-5).join("\n"),
+    };
+  }
+  // Record what we just wrote, so the next export can tell "unchanged since my last
+  // export" (safe to replace) from "someone edited this in between" (refuse). Best-effort.
+  try {
+    const newHash = createHash("sha256").update(fs.readFileSync(exported)).digest("hex");
+    fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
+    fs.writeFileSync(sidecarPath, JSON.stringify({ file: path.basename(exported), sha256: newHash, at: new Date().toISOString() }));
+  } catch { /* a sidecar failure must not fail the export itself */ }
+
+  return {
+    ok: true,
+    workbook: bookName,
+    module: moduleName,
+    exportedPath: exported,
+    previousFileBackups: previousFileBackups.length > 0 ? previousFileBackups : undefined,
+    note: "File reflects Excel's current in-memory VBA project. The workbook itself is still not saved to disk.",
+  };
+}
+
 server.tool(
   "excel_export_module",
   "Export ONE module from an open workbook to the extension's export-folder layout (<exportDir>\\<workbook name without extension>\\<module>.bas/.cls/.frm), refreshing the on-disk copy a human edits in VS Code. " +
@@ -1175,151 +1311,15 @@ server.tool(
     force: z.boolean().optional().describe("Overwrite even if the exported file was modified since this tool's last export. Only after the user confirmed discarding that change (a backup is still taken)."),
   },
   async ({ workbook, workbookPath, module: moduleName, exportDir, force }) => {
-    const scriptsDir = getScriptsDir();
-    if (!scriptsDir) {
-      return { content: [{ type: "text", text: JSON.stringify({ error: "MCP_SCRIPTS_DIR / MCP_PS_LIST not set" }) }] };
-    }
-    const ps = path.join(scriptsDir, "export_opened_vba.ps1");
-    if (!fs.existsSync(ps)) {
-      return { content: [{ type: "text", text: JSON.stringify({ error: `ps1 not found: ${ps}` }) }] };
-    }
     const source = workbookPath ?? workbook;
     if (!source) {
       return { content: [{ type: "text", text: JSON.stringify({ error: "workbook or workbookPath required" }) }] };
     }
-    // The script's -BookName filter compares against the name WITHOUT extension.
-    const bookName = path.basename(source, path.extname(source));
-
-    // Guard: refuse to overwrite a file that changed since this tool's last export.
-    // The write tool's optimistic lock watches only the VBE side, so a human editing the
-    // EXPORTED FILE in VS Code has no protection there -- their saved-but-not-imported
-    // edit would be silently replaced. A sidecar records the hash of what this tool last
-    // wrote; a mismatch means someone else touched the file since (see exportGuard.ts).
-    const bookDirPre = path.join(exportDir, bookName);
-    const sidecarPath = path.join(exportDir, ".excel-vba-sync-backups", bookName, `${moduleName}.lastexport.json`);
-    const codeFileOnDisk = [".bas", ".cls", ".frm", ".txt"]
-      .map((ext) => path.join(bookDirPre, moduleName + ext))
-      .find((p) => fs.existsSync(p));
-    let lastExportHash: string | null = null;
-    try {
-      lastExportHash = JSON.parse(fs.readFileSync(sidecarPath, "utf8")).sha256 ?? null;
-    } catch { /* no sidecar or unreadable -> provenance unknown, guard stays out of the way */ }
-    const currentFileHash = codeFileOnDisk
-      ? createHash("sha256").update(fs.readFileSync(codeFileOnDisk)).digest("hex")
-      : null;
-    const guard = evaluateExportGuard({ currentFileHash, lastExportHash, force: force === true });
-    if (!guard.ok) {
-      return {
-        content: [{ type: "text", text: JSON.stringify({
-          ok: false,
-          error: guard.error,
-          detail: guard.detail,
-          file: codeFileOnDisk,
-        }) }],
-        isError: true,
-      };
-    }
-
-    // Back up any existing exported file for this module (and a .frm's paired .frx binary)
-    // before the script overwrites it. Two reasons: (1) if the AI-written change is tested
-    // and REJECTED, the previous exported content is the fallback; (2) the human may have
-    // edited the exported file without importing yet -- this export would silently destroy
-    // that work. Same conventions as the write tool's code backup: best-effort (a backup
-    // failure never blocks the export), timestamped, under a .excel-vba-sync-backups dir.
-    let previousFileBackups: string[] = [];
-    try {
-      const existing = [".bas", ".cls", ".frm", ".txt", ".frx"]
-        .map((ext) => ({ ext, p: path.join(bookDirPre, moduleName + ext) }))
-        .filter(({ p }) => fs.existsSync(p));
-      if (existing.length > 0) {
-        const d = new Date();
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-        const backupDir = path.join(exportDir, ".excel-vba-sync-backups", bookName);
-        fs.mkdirSync(backupDir, { recursive: true });
-        for (const { ext, p } of existing) {
-          const dest = path.join(backupDir, `${moduleName}_${ts}${ext}`);
-          fs.copyFileSync(p, dest);
-          previousFileBackups.push(dest);
-        }
-      }
-    } catch {
-      previousFileBackups = [];
-    }
-
-    const args = [
-      "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
-      "-File", ps,
-      "-OutputDir", exportDir,
-      "-BookName", bookName,
-      "-ModuleName", moduleName,
-      "-NoActivate",
-    ];
-    // Exit codes of export_opened_vba.ps1 (localized log text goes to stdout, not JSON).
-    const exitCodeMessages: Record<number, string> = {
-      1: "exportDir argument missing",
-      2: "exportDir is under OneDrive -- refused, same rule as the manual export command. Use a folder outside OneDrive.",
-      3: "Excel is not running. This tool does not auto-launch Excel; open the workbook first (any read tool with workbookPath does that).",
-      4: "No saved macro-enabled workbook (.xlsm/.xlsb) is open in Excel.",
-      5: `exportDir does not exist: ${exportDir}. Create it first (or fix a typo) -- it is not auto-created.`,
-      6: `Nothing was exported -- module '${moduleName}' not found in workbook '${bookName}', or its VBA project is protected.`,
+    const result = await performModuleExport(source, moduleName, exportDir, force === true);
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      ...(result.ok ? {} : { isError: true as const }),
     };
-
-    let stdoutText = "";
-    try {
-      const { stdout } = await execFileAsync("powershell.exe", args, {
-        windowsHide: true,
-        encoding: "buffer",
-        maxBuffer: 2 * 1024 * 1024,
-        cwd: path.dirname(ps),
-        timeout: 60000,
-      });
-      stdoutText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
-    } catch (e: any) {
-      const code = typeof e?.code === "number" ? e.code : undefined;
-      const tail = (Buffer.isBuffer(e?.stdout) ? e.stdout.toString("utf8") : String(e?.stdout ?? "")).trim().split(/\r?\n/).slice(-5).join("\n");
-      return {
-        content: [{ type: "text", text: JSON.stringify({
-          ok: false,
-          error: (code !== undefined && exitCodeMessages[code]) || `export script failed (exit ${code ?? "?"})`,
-          log: tail,
-        }) }],
-        isError: true,
-      };
-    }
-
-    // exit 0: locate the produced file (extension depends on the module's type).
-    const bookDir = path.join(exportDir, bookName);
-    const exported = [".bas", ".cls", ".frm", ".txt"]
-      .map((ext) => path.join(bookDir, moduleName + ext))
-      .filter((p) => fs.existsSync(p))
-      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
-    if (!exported) {
-      return {
-        content: [{ type: "text", text: JSON.stringify({
-          ok: false,
-          error: `script reported success but no exported file found under ${bookDir}`,
-          log: stdoutText.trim().split(/\r?\n/).slice(-5).join("\n"),
-        }) }],
-        isError: true,
-      };
-    }
-    // Record what we just wrote, so the next export can tell "unchanged since my last
-    // export" (safe to replace) from "someone edited this in between" (refuse). Best-effort.
-    try {
-      const newHash = createHash("sha256").update(fs.readFileSync(exported)).digest("hex");
-      fs.mkdirSync(path.dirname(sidecarPath), { recursive: true });
-      fs.writeFileSync(sidecarPath, JSON.stringify({ file: path.basename(exported), sha256: newHash, at: new Date().toISOString() }));
-    } catch { /* a sidecar failure must not fail the export itself */ }
-
-    return { content: [{ type: "text", text: JSON.stringify({
-      ok: true,
-      workbook: bookName,
-      module: moduleName,
-      exportedPath: exported,
-      previousFileBackups: previousFileBackups.length > 0 ? previousFileBackups : undefined,
-      note: "File reflects Excel's current in-memory VBA project. The workbook itself is still not saved to disk.",
-    }) }] };
   }
 );
 
@@ -2586,6 +2586,46 @@ server.tool(
         maxBuffer: 2 * 1024 * 1024,
       });
       const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+
+      // Post-write export sync (excelVbaSync.mcpSyncMode, handed over by the extension as
+      // MCP_SYNC_MODE / MCP_EXPORT_DIR). The server's instructions are advisory and some
+      // clients never show them to the model at all, so the reminder -- or the auto-export
+      // result -- rides IN the write response, the one channel every client delivers.
+      // This matters most for newly created modules: no exported file exists yet and
+      // nothing is open in an editor, so an agent has no other cue to export, nor any
+      // way to learn the export root on its own.
+      const syncMode = process.env.MCP_SYNC_MODE;
+      const syncDir = process.env.MCP_EXPORT_DIR;
+      if ((syncMode === "remind" || syncMode === "auto") && syncDir) {
+        const jsonStart = outText.indexOf("{");
+        if (jsonStart >= 0) {
+          try {
+            const payload = JSON.parse(outText.slice(jsonStart));
+            const source = params.workbookPath || params.workbook || "";
+            const bookName = source ? path.basename(source, path.extname(source)) : "";
+            // Fire only when this workbook's export folder already exists -- the on-disk
+            // evidence that the user actually maintains exported files for it. This is what
+            // makes 'remind' safe as the DEFAULT: MCP_EXPORT_DIR always resolves to
+            // something (the extension falls back to a default path), so without this
+            // check every non-exporting user would start growing a vbaExport folder they
+            // never chose. Trade-off accepted: a brand-new workbook that has never been
+            // exported stays silent until its first manual/AI export creates the folder.
+            if (payload && payload.ok === true && bookName && fs.existsSync(path.join(syncDir, bookName))) {
+              if (syncMode === "auto") {
+                // Guard applies (force:false): a human's not-yet-imported edit refuses the
+                // auto-export, and the refusal is reported instead of being forced over.
+                // An export failure must not fail the write -- the write already happened.
+                payload.autoExport = await performModuleExport(source, params.module, syncDir, false);
+              } else {
+                payload.nextAction =
+                  `Sync mode 'remind' is on: call excel_export_module for module '${params.module}' with exportDir '${syncDir}' now, ` +
+                  `so the exported file matches what was just written.`;
+              }
+              return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+            }
+          } catch { /* response was not parseable JSON -> fall through to raw passthrough */ }
+        }
+      }
       return classifyResult(outText);
     } catch (e: any) {
       return extractFailureResult(e);

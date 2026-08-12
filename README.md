@@ -100,7 +100,7 @@ AIクライアント（Claude Code / Copilot Chat 等）
 
 ただし一発では書き込めません。書き込みには`dryRun`→`confirmToken`の2段階確認、自動バックアップ、複数クライアント利用時の排他制御が入っています。詳しくは「[内蔵MCPサーバーが提供する機能](#ja-ai-usage)」を参照してください。
 
-**①と②は独立しています。** 自動では同期しませんが、橋渡しは2つあります：AIがExcelへ書き込んだ内容は`excel_export_module`ツールでそのモジュールだけエクスポートファイルへ反映でき（AIエージェントが書き込み後に自分で呼びます）、逆方向は上記「[保存時のインポート提案](#ja-two-ways)」が編集済みファイルのインポートを提案します。
+**①と②は独立しています。** 既定では自動同期しませんが、橋渡しは2つあります：AIがExcelへ書き込んだ内容は`excel_export_module`ツールでそのモジュールだけエクスポートファイルへ反映でき（AIエージェントが書き込み後に自分で呼びます）、逆方向は上記「[保存時のインポート提案](#ja-two-ways)」が編集済みファイルのインポートを提案します。さらにAI→ファイル方向は、設定`excelVbaSync.mcpSyncMode`（既定`remind`：書き込み応答でAIにエクスポートを指示。`auto`にするとサーバーが自動でエクスポート）が同期を確実にします。いずれも対象ブックのエクスポートフォルダが既に存在するときだけ動くので、エクスポートを使わない運用には影響しません。
 
 ## <a id="ja-ai-usage"></a>内蔵MCPサーバーが提供する機能
 
@@ -315,7 +315,7 @@ Built-in MCP server  ──directly via COM──>  Excel VBE (the currently ope
 
 It cannot write in one shot, though. Writes go through a two-step `dryRun`/`confirmToken` confirmation, automatic backups, and concurrency control for multiple clients. See "[What the built-in MCP server provides](#en-ai-usage)" for details.
 
-**① and ② are independent.** Nothing syncs automatically, but there are two bridges: an AI agent can refresh a single exported file right after writing to Excel via the `excel_export_module` tool, and in the other direction the "[Import prompt on save](#en-two-ways)" above offers to import your edited file.
+**① and ② are independent.** Nothing syncs automatically by default, but there are two bridges: an AI agent can refresh a single exported file right after writing to Excel via the `excel_export_module` tool, and in the other direction the "[Import prompt on save](#en-two-ways)" above offers to import your edited file. The AI-to-file direction is made reliable by the `excelVbaSync.mcpSyncMode` setting (default `remind`: each write response instructs the AI to export; `auto` makes the server export by itself). Both act only when the workbook's export folder already exists, so workflows that never export are unaffected.
 
 ## <a id="en-ai-usage"></a>What the built-in MCP server provides
 
