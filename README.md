@@ -108,7 +108,7 @@ AIクライアント（Claude Code / Copilot Chat 等）
 
 Claude Code・Claude Desktop・Copilot Chat・Codex等のAIクライアントから、VBAコードの読み取り・検索・解析・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます（上記②）。
 
-### 提供される20のツール
+### 提供される21のツール
 
 | ツール | できること |
 |---|---|
@@ -123,6 +123,7 @@ Claude Code・Claude Desktop・Copilot Chat・Codex等のAIクライアントか
 | `vba_list_variable_scopes` | 変数・定数宣言をスコープ別に一覧化、または指定変数の使用箇所を検索 |
 | `excel_list_macros` | 実行可能なマクロ（Public Sub）の一覧を取得 |
 | `excel_run_macro` | マクロを実行 |
+| `excel_break_execution` | 暴走・長時間実行中のマクロにCtrl+Breakを送って中断（COM経由でないため、Excelが応答しない状態でも届く） |
 | `excel_read_range` | セル範囲の値を読み取り（マクロの実行結果検証等に） |
 | `excel_update_module_code` | 既存モジュール（UserFormのコード部分も可）へ書き込み、または`moduleType`指定で新規モジュールを作成。`dryRun`/`confirmToken`の安全フロー付き、重複プロシージャ名も警告 |
 | `excel_export_module` | 指定モジュール1つをエクスポートフォルダへ書き出し（書き込み後にディスク上のファイルを最新化。①の手動編集と組み合わせる運用向け） |
@@ -323,7 +324,7 @@ This extension has a built-in [Model Context Protocol (MCP)](https://modelcontex
 
 AI clients such as Claude Code, Claude Desktop, Copilot Chat and Codex can read, search, analyze and run VBA code — and **write AI-authored code directly into an Excel VBA module** (option ② above).
 
-### 20 available tools
+### 21 available tools
 
 | Tool | What it does |
 |---|---|
@@ -338,6 +339,7 @@ AI clients such as Claude Code, Claude Desktop, Copilot Chat and Codex can read,
 | `vba_list_variable_scopes` | List variable and constant declarations by scope, or scope-aware search for one variable's usages |
 | `excel_list_macros` | List runnable macros (Public Subs) |
 | `excel_run_macro` | Run a macro |
+| `excel_break_execution` | Interrupt a runaway or long-running macro with Ctrl+Break (sent as Windows input, so it works while Excel is unresponsive to COM) |
 | `excel_read_range` | Read cell values from a range (e.g. to verify a macro's effect) |
 | `excel_update_module_code` | Overwrite an existing module (including a UserForm's code-behind), or create a new one via `moduleType`. Includes the `dryRun`/`confirmToken` safety flow and a duplicate-procedure-name warning |
 | `excel_export_module` | Export one module to the export folder, refreshing the on-disk copy after an MCP write (for workflows that combine ① manual editing) |

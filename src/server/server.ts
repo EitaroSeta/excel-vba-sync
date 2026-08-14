@@ -1062,7 +1062,7 @@ server.tool(
 server.tool(
   "excel_run_macro",
   "Run a VBA macro via Application.Run. Get an exact 'qualified' name from excel_list_macros rather than guessing moduleName/procName. " +
-  "WARNING: a macro that shows a dialog (MsgBox, InputBox, a modal UserForm) will hang this call until timeoutMs. The timeout only ends this tool's wait -- it does not close the dialog or unstick Excel, so check Excel directly after an ERR_TIMEOUT. " +
+  "WARNING: a macro that shows a dialog (MsgBox, InputBox, a modal UserForm) or runs long (infinite loop, runaway recursion) will hang this call until timeoutMs. The timeout only ends this tool's wait -- it does not close the dialog or stop the macro, so Excel stays stuck and every other tool here starts timing out too; use excel_break_execution to interrupt it. " +
   "Success only means Application.Run returned without throwing; it does NOT confirm the macro did what was intended -- verify effects yourself (e.g. excel_read_range).",
   {
     qualified: z.string().optional().describe("Fully-qualified name, e.g. \"'Book1.xlsm'!Module1.DoWork\" (from excel_list_macros). Wins over moduleName/procName."),
@@ -1138,11 +1138,64 @@ server.tool(
           content: [{ type: "text", text: JSON.stringify({
             ok: false,
             error: "ERR_TIMEOUT",
-            detail: `Macro execution timed out after ${timeoutMs}ms. Excel may be blocked on a dialog (MsgBox/InputBox) or still running -- please check Excel directly.`,
+            detail: `Macro execution timed out after ${timeoutMs}ms. The macro is still running in Excel -- only this tool's wait ended. To stop it: call excel_break_execution (sends Ctrl+Break at the Windows input level, so it works while COM is blocked), or have the user press Ctrl+Break in Excel. Either way the user must then click End in VBA's "Code execution has been interrupted" dialog before any macro will run again. If it is stuck on a dialog (MsgBox/InputBox) instead, the user must dismiss that. Do not retry other tools first -- they queue behind this and time out too.`,
           }) }],
           isError: true,
         };
       }
+      return extractFailureResult(e);
+    }
+  }
+);
+
+// ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_break_execution ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+// The escape hatch for "an agent wrote a runaway macro, ran it, and now Excel is wedged".
+// Two deliberate departures from every other tool here, both forced by that situation:
+//   1. It reaches Excel through Windows INPUT (user32 keybd_event), not COM -- a VBA loop
+//      makes Excel refuse COM calls, so any COM-based rescue would itself hang.
+//   2. It calls execFileAsyncRaw, BYPASSING the excelOpQueue. Queuing it would park the
+//      rescue behind the stuck invocation it is meant to rescue -- it must overtake.
+// Value beyond unsticking: an interrupted Excel can still SAVE. Force-quitting EXCEL.EXE
+// (the only previous option) discards everything written since the last save.
+server.tool(
+  "excel_break_execution",
+  "Interrupt a running or stuck VBA macro (infinite loop, runaway recursion, very long computation) by sending Ctrl+Break to Excel's window at the Windows input level. " +
+  "Use this after excel_run_macro returns ERR_TIMEOUT, or when every Excel tool suddenly times out -- it does not use COM, so it still works while Excel is too busy to answer COM calls. " +
+  "REQUIRES A HUMAN FOLLOW-UP: a successful break leaves VBA's modal 'Code execution has been interrupted' dialog on screen, and until the user clicks End (not Continue -- that resumes the macro) the project stays in break mode, where every macro run fails with 0x800ADF09 and every module write prompts 'this action will reset the project'. Always relay that instruction; do not retry other tools first. " +
+  "Once they click End, Excel is usable again and they can SAVE -- which is the point: force-quitting Excel is the alternative and loses everything since the last save. " +
+  "This tool cannot tell you whether the macro actually stopped (read-only COM keeps answering either way), so ask the user what Excel is showing rather than probing. " +
+  "Needs an interactive desktop and briefly steals foreground focus; if it reports excel_not_activated the keystroke went to another window and the macro is still running. Cannot interrupt a macro that set Application.EnableCancelKey = xlDisabled, or one blocked inside a Win32/COM call.",
+  {
+    processId: z.number().optional().describe("PID of the EXCEL.EXE to target. Required only when several Excel processes are running (the tool refuses to guess and returns their PIDs)."),
+    alsoSendEsc: z.boolean().optional().describe("Also send Esc ~0.3s after the break. Can dismiss some dialogs; leave off unless Ctrl+Break alone did not free Excel."),
+  },
+  async ({ processId, alsoSendEsc }) => {
+    const scriptsDir = getScriptsDir();
+    if (!scriptsDir) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "MCP_SCRIPTS_DIR / MCP_PS_LIST not set" }) }], isError: true };
+    }
+    const ps = path.join(scriptsDir, "Break-ExcelExecution.ps1");
+    if (!fs.existsSync(ps)) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: `ps1 not found: ${ps}` }) }], isError: true };
+    }
+    const args = [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+      "-File", ps,
+    ];
+    if (typeof processId === "number") { args.push("-TargetPid", String(processId)); }
+    if (alsoSendEsc) { args.push("-AlsoSendEsc"); }
+    try {
+      // execFileAsyncRaw, NOT execFileAsync: see the note above -- this must not queue.
+      const { stdout } = await execFileAsyncRaw("powershell.exe", args, {
+        windowsHide: true,
+        encoding: "buffer",
+        maxBuffer: 1024 * 1024,
+        cwd: path.dirname(ps),
+        timeout: 20000,
+      } as any);
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
       return extractFailureResult(e);
     }
   }
