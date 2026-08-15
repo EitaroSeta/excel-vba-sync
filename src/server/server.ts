@@ -1005,6 +1005,141 @@ try {
   }
 );
 
+// ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■ excel_list_sheet_controls ■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+// The worksheet-side counterpart to excel_list_form_controls (which only ever sees
+// UserForms). A button sitting on a sheet is what the user actually clicks, so its
+// assigned macro is an ENTRY POINT -- and until now nothing here could report one:
+// OnAction/Shapes/OLEObjects appeared nowhere in the codebase. Reading VBA source cannot
+// recover this either; the wiring lives in the sheet, not the code.
+server.tool(
+  "excel_list_sheet_controls",
+  "List worksheet-embedded controls and the macros wired to them: Shapes (buttons, checkboxes, or any shape) that have an OnAction macro assigned, plus every ActiveX control (OLEObjects) with its name and progId. " +
+  "These are entry points a user clicks, so read this before concluding what starts a workbook's logic -- excel_list_macros shows what CAN run, this shows what the UI actually invokes, and neither the VBA source nor excel_list_form_controls (UserForms only) reveals it. " +
+  "Shapes without an OnAction are omitted, so decorative shapes and images do not bloat the response. " +
+  "An OLEObject's events are named <controlName>_<Event> (e.g. CommandButton1_Click), which is how to recognise those procedures in excel_get_module_code output as event handlers rather than ordinary Subs. " +
+  "Does NOT require the VBA Trust Center setting -- it reads worksheet objects, not the VBA project.",
+  {
+    workbook: z.string().optional().describe("Workbook display name. Give this or workbookPath; workbookPath is preferred (it can auto-launch Excel and open the file)."),
+    workbookPath: z.string().optional().describe("Full path to the workbook. Auto-launches Excel and opens the file if needed."),
+    sheet: z.string().optional().describe("Worksheet name to inspect. Omit to scan every worksheet in one call."),
+  },
+  async (params) => {
+    if (!params.workbook && !params.workbookPath) {
+      return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "workbook or workbookPath is required" }) }], isError: true };
+    }
+    const wb = psq(params.workbook ?? "");
+    const wbPath = psq(params.workbookPath ?? "");
+    const sheetName = psq(params.sheet ?? "");
+    const dotSource = dotSourceExcelUtil();
+
+    // Every property below throws on shapes that do not support it (OnAction on a picture,
+    // FormControlType on anything that is not a form control, TextFrame on an OLE object),
+    // so each read is guarded on its own -- one awkward shape must not lose the whole sheet.
+    const psScript = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding           = [Console]::OutputEncoding
+
+${dotSource}
+
+try { $r = Get-OrStartExcelApplication; $excel = $r.App }
+catch { @{ ok=$false; error='excel_not_found' } | ConvertTo-Json ; exit }
+
+try { $wb = Resolve-TargetWorkbook -App $excel -WorkbookPath '${wbPath}' -WorkbookName '${wb}' }
+catch { @{ ok=$false; error="$($_.Exception.Message)" } | ConvertTo-Json ; exit }
+
+$targetSheet = '${sheetName}'
+$sheets = @()
+if ($targetSheet) {
+  $match = @($wb.Worksheets) | Where-Object { $_.Name -eq $targetSheet }
+  if (-not $match) { @{ ok=$false; error='sheet_not_found'; sheet=$targetSheet } | ConvertTo-Json ; exit }
+  $sheets = @($match)
+} else {
+  $sheets = @($wb.Worksheets)
+}
+
+$shapeTypeMap = @{ 1='AutoShape'; 3='Chart'; 4='Comment'; 5='Freeform'; 6='Group'; 7='EmbeddedOLEObject'; 8='FormControl'; 9='Line'; 11='OLEControlObject'; 12='Picture'; 13='Placeholder'; 17='TextBox'; 19='Table'; 20='Canvas'; 21='Diagram'; 24='Ink'; 27='WebVideo' }
+$formCtlMap  = @{ 0='Button'; 1='CheckBox'; 2='DropDown'; 3='EditBox'; 4='GroupBox'; 5='Label'; 6='ListBox'; 7='OptionButton'; 8='ScrollBar'; 9='Spinner' }
+
+$result = @()
+try {
+  foreach ($ws in $sheets) {
+    $shapes = @()
+    foreach ($shp in @($ws.Shapes)) {
+      $onAction = ''
+      try { $onAction = [string]$shp.OnAction } catch { $onAction = '' }
+      if (-not $onAction) { continue }
+
+      $stRaw = -1
+      try { $stRaw = [int]$shp.Type } catch {}
+      $stName = if ($shapeTypeMap.ContainsKey($stRaw)) { $shapeTypeMap[$stRaw] } else { "$stRaw" }
+
+      $fcName = $null
+      if ($stRaw -eq 8) {
+        try {
+          $fcRaw = [int]$shp.FormControlType
+          $fcName = if ($formCtlMap.ContainsKey($fcRaw)) { $formCtlMap[$fcRaw] } else { "$fcRaw" }
+        } catch { $fcName = $null }
+      }
+
+      $caption = ''
+      try { $caption = [string]$shp.TextFrame.Characters().Text } catch { $caption = '' }
+
+      $entry = [ordered]@{ name=[string]$shp.Name; shapeType=$stName; onAction=$onAction }
+      if ($fcName) { $entry.formControlType = $fcName }
+      if ($caption) { $entry.caption = $caption }
+      $shapes += [pscustomobject]$entry
+    }
+
+    $oles = @()
+    try {
+      foreach ($ole in @($ws.OLEObjects())) {
+        $oname = ''; $prog = ''; $ocap = ''
+        try { $oname = [string]$ole.Name } catch {}
+        try { $prog  = [string]$ole.progID } catch {}
+        try { $ocap  = [string]$ole.Object.Caption } catch { $ocap = '' }
+        $oentry = [ordered]@{ name=$oname; progId=$prog }
+        if ($ocap) { $oentry.caption = $ocap }
+        $oles += [pscustomobject]$oentry
+      }
+    } catch { $oles = @() }
+
+    if ($shapes.Count -gt 0 -or $oles.Count -gt 0) {
+      $result += [pscustomobject]@{ sheet=[string]$ws.Name; shapes=$shapes; oleObjects=$oles }
+    }
+  }
+
+  $shapeTotal = ($result | ForEach-Object { $_.shapes.Count } | Measure-Object -Sum).Sum
+  $oleTotal   = ($result | ForEach-Object { $_.oleObjects.Count } | Measure-Object -Sum).Sum
+  $res = @{
+    ok=$true
+    workbook=$wb.Name
+    sheets=$result
+    sheetsWithControls=$result.Count
+    shapeCount=[int]$shapeTotal
+    oleObjectCount=[int]$oleTotal
+  }
+  if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
+  $res | ConvertTo-Json -Depth 6
+} catch {
+  @{ ok=$false; error='list_failed'; detail="$($_.Exception.Message)" } | ConvertTo-Json
+}
+`.trim();
+
+    try {
+      const { stdout } = await execFileAsync(
+        "powershell.exe",
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", psScript],
+        { windowsHide: true, encoding: "buffer", timeout: 20000, maxBuffer: 2 * 1024 * 1024 }
+      );
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
+      return classifyResult(outText);
+    } catch (e: any) {
+      return extractFailureResult(e);
+    }
+  }
+);
+
 server.tool(
   "excel_list_macros",
   "List runnable macros: module-level Public (or implicitly public) Subs. Private/Friend Subs and all Functions are excluded. " +
@@ -1922,11 +2057,36 @@ server.tool(
 // memory in a single PowerShell session (no temp files -- unlike vba_analyze_flow/
 // vba_render_flowchart, this tool never invokes an external script; the matching is
 // pure regex over the text, done in dependencyScan.ts). Read-only, advisory only.
+
+// A VBProject.References entry -- i.e. an EARLY-bound library dependency.
+// These exist only in the project's COM state, never in the source text, so
+// dependencyScan.ts (pure regex over code) structurally cannot see them: a project doing
+// `Dim cn As New ADODB.Connection` has an entire external dependency that no amount of
+// text scanning reveals. That silent blind spot is why this is read here instead.
+type VbaProjectReference = {
+  name: string;
+  description: string;
+  guid: string;
+  major: number;
+  minor: number;
+  fullPath: string;
+  builtIn: boolean;   // VBA/Excel/stdole/Office are always present; user-added ones are what matter for a migration
+  isBroken: boolean;  // a migration blocker, and equally a live bug in the current workbook
+};
 async function readAllModulesCode(
   wbEscaped: string,
   wbPathEscaped: string
 ): Promise<
-  | { ok: true; workbook: string; modules: { name: string; componentType: number; code: string }[]; launchedExcelPid?: number }
+  | {
+      ok: true;
+      workbook: string;
+      modules: { name: string; componentType: number; code: string }[];
+      // Library references (early binding). Collected here because it costs nothing extra --
+      // the COM session is already open -- and only vba_list_dependencies surfaces them;
+      // the other two callers of this function simply ignore the field.
+      references: VbaProjectReference[];
+      launchedExcelPid?: number;
+    }
   | { ok: false; content: { type: "text"; text: string }[]; isError: true }
 > {
   const dotSource = dotSourceExcelUtil();
@@ -1958,7 +2118,29 @@ try {
   exit
 }
 
-$res = @{ ok=$true; workbook=$wb.Name; modules=$mods.ToArray() }
+# Library references (early binding). A broken reference throws on most property reads,
+# so each entry is guarded individually -- a single unresolvable reference must not cost
+# us the whole list, since a broken one is exactly what the caller most needs to hear about.
+$refs = New-Object System.Collections.Generic.List[object]
+try {
+  foreach ($ref in $wb.VBProject.References) {
+    $broken = $true
+    try { $broken = [bool]$ref.IsBroken } catch { $broken = $true }
+    $entry = @{ name=''; description=''; guid=''; major=0; minor=0; fullPath=''; builtIn=$false; isBroken=$broken }
+    try { $entry.name        = [string]$ref.Name } catch {}
+    try { $entry.description = [string]$ref.Description } catch {}
+    try { $entry.guid        = [string]$ref.GUID } catch {}
+    try { $entry.major       = [int]$ref.Major } catch {}
+    try { $entry.minor       = [int]$ref.Minor } catch {}
+    try { $entry.fullPath    = [string]$ref.FullPath } catch {}
+    try { $entry.builtIn     = [bool]$ref.BuiltIn } catch {}
+    $refs.Add($entry)
+  }
+} catch {
+  # Leave the list as-is; the module code is the primary payload and must still be returned.
+}
+
+$res = @{ ok=$true; workbook=$wb.Name; modules=$mods.ToArray(); references=$refs.ToArray() }
 if ($r.LaunchedProcessId) { $res.launchedExcelPid = $r.LaunchedProcessId }
 $res | ConvertTo-Json -Depth 6
 `.trim();
@@ -1989,6 +2171,7 @@ $res | ConvertTo-Json -Depth 6
       ok: true,
       workbook: payload.workbook,
       modules: payload.modules ?? [],
+      references: payload.references ?? [],
       launchedExcelPid: payload.launchedExcelPid,
     };
   } catch (e: any) {
@@ -1999,6 +2182,8 @@ $res | ConvertTo-Json -Depth 6
 server.tool(
   "vba_list_dependencies",
   "Scan VBA source for external/platform dependencies: Windows API Declare statements, CreateObject/GetObject, Shell, Application.Run (dynamic dispatch, incl. cross-workbook), native file I/O (Open/Kill/FileCopy/MkDir/RmDir), Scripting.FileSystemObject file/folder methods, and Workbooks.Open. " +
+  "ALSO returns the project's library references (early binding) in a workbook-level 'references' array -- these live in COM state, not in the source, so scanning code alone would miss a dependency like 'Dim cn As New ADODB.Connection' entirely. " +
+  "builtIn is true only for VBA and Excel itself; stdole, Office and MSForms report false despite being standard equipment, so treat anything BEYOND those (ADODB, Scripting.Runtime, VBScript.RegExp, Word, Outlook, ...) as the real external dependency a migration must replace. isBroken:true matters at any time -- a broken reference breaks the workbook today. " +
   "Useful for scoping migration work, auditing what a workbook touches outside VBA, and finding files that must travel with it. " +
   "A procedure that vba_analyze_flow shows as uncalled is not necessarily dead -- check here for an Application.Run dispatching to it by name first. " +
   "fileIo entries with methodNameOnly:true were matched by method name only, so the call target's type was not verified. " +
@@ -2058,12 +2243,22 @@ server.tool(
       applicationRunCalls: scans.reduce((sum, s) => sum + s.applicationRunCalls.length, 0),
       fileIo: scans.reduce((sum, s) => sum + s.fileIo.length, 0),
       externalWorkbooks: scans.reduce((sum, s) => sum + s.externalWorkbooks.length, 0),
+      // Library references are workbook-level, not per-module, so they are counted here but
+      // listed outside `modules`. Note what BuiltIn actually means, measured rather than
+      // assumed: it is true only for VBA and the host application (Excel). stdole, Office
+      // and MSForms report BuiltIn=false because they are technically removable, even
+      // though they are standard equipment -- so this count is "not built in", NOT
+      // "user added", and the caller still has to look past those three.
+      referencesTotal: readResult.references.length,
+      referencesNonBuiltIn: readResult.references.filter((r) => !r.builtIn).length,
+      referencesBroken: readResult.references.filter((r) => r.isBroken).length,
     };
 
     const res: Record<string, unknown> = {
       ok: true,
       workbook: readResult.workbook,
       summary,
+      references: readResult.references,
       modules: nonEmptyScans,
     };
     if (readResult.launchedExcelPid) { res.launchedExcelPid = readResult.launchedExcelPid; }

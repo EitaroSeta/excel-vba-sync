@@ -108,7 +108,7 @@ AIクライアント（Claude Code / Copilot Chat 等）
 
 Claude Code・Claude Desktop・Copilot Chat・Codex等のAIクライアントから、VBAコードの読み取り・検索・解析・マクロ実行に加えて、**AIが書いたコードをExcelのVBAモジュールへ直接書き込む**ことができます（上記②）。
 
-### 提供される21のツール
+### 提供される22のツール
 
 | ツール | できること |
 |---|---|
@@ -129,6 +129,7 @@ Claude Code・Claude Desktop・Copilot Chat・Codex等のAIクライアントか
 | `excel_export_module` | 指定モジュール1つをエクスポートフォルダへ書き出し（書き込み後にディスク上のファイルを最新化。①の手動編集と組み合わせる運用向け） |
 | `excel_list_worksheets` | 実在するシート一覧を取得（表示名・VBAコード名・表示状態） |
 | `excel_list_form_controls` | UserForm内のコントロール一覧を取得（名前・種類） |
+| `excel_list_sheet_controls` | シート上のボタン・図形に割り当てられたマクロ（OnAction）とActiveXコントロールを一覧化（利用者が押す「入口」の把握に） |
 | `excel_list_defined_names` | 実在する名前付き範囲の一覧を取得（参照先・壊れているかどうか） |
 | `excel_list_formulas` | シート上の数式を取得（同一パターンはグルーピング） |
 | `excel_list_conditional_formats` | 条件付き書式のルール一覧を取得（同一パターンはグルーピング） |
@@ -324,7 +325,7 @@ This extension has a built-in [Model Context Protocol (MCP)](https://modelcontex
 
 AI clients such as Claude Code, Claude Desktop, Copilot Chat and Codex can read, search, analyze and run VBA code — and **write AI-authored code directly into an Excel VBA module** (option ② above).
 
-### 21 available tools
+### 22 available tools
 
 | Tool | What it does |
 |---|---|
@@ -345,6 +346,7 @@ AI clients such as Claude Code, Claude Desktop, Copilot Chat and Codex can read,
 | `excel_export_module` | Export one module to the export folder, refreshing the on-disk copy after an MCP write (for workflows that combine ① manual editing) |
 | `excel_list_worksheets` | List actual worksheets (display name, VBA CodeName, visibility) |
 | `excel_list_form_controls` | List a UserForm's controls (name and type) |
+| `excel_list_sheet_controls` | List macros wired to worksheet shapes/buttons (OnAction) and ActiveX controls -- the entry points a user actually clicks |
 | `excel_list_defined_names` | List actual defined names (what they refer to, whether broken) |
 | `excel_list_formulas` | List formulas present in a sheet's cells (grouped by pattern) |
 | `excel_list_conditional_formats` | List conditional formatting rules (grouped by pattern) |
